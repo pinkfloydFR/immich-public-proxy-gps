@@ -179,6 +179,7 @@ For example, to disable the home page at `/` and at `/share` you need to change 
 | Option        | Type   | Description                                        |
 |---------------|--------|----------------------------------------------------|
 | `description` | `bool` | Show the description as a caption below the photo. |
+| `location`    | `bool` | Show GPS coordinates as a clickable link (OpenStreetMap) below the photo in the lightbox, and display an interactive map with markers below the gallery. |
 
 ### lightGallery
 
