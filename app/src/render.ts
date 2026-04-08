@@ -147,7 +147,7 @@ class Render {
       const subHtmlParts: string[] = []
       if (description) subHtmlParts.push(`<p>${description}</p>`)
       if (hasGps) {
-        subHtmlParts.push(`<p><a href="https://www.google.com/maps?q=${lat},${lng}" target="_blank" rel="noopener" class="gps-link">📍 ${lat.toFixed(6)}, ${lng.toFixed(6)}</a></p>`)
+        subHtmlParts.push(`<p><a href="https://www.openstreetmap.org/?mlat=${lat}&mlon=${lng}&zoom=14" target="_blank" rel="noopener" class="gps-link">📍 ${lat.toFixed(6)}, ${lng.toFixed(6)}</a></p>`)
       }
       const subHtml = subHtmlParts.join('')
 
