@@ -180,7 +180,7 @@ class Render {
       showDownload: canDownload(share),
       showTitle: getConfigOption('ipp.showGalleryTitle', false),
       lgConfig: getConfigOption('lightGallery', {}),
-      googleMapsApiKey: process.env.GOOGLE_MAPS_API_KEY || ''
+      showMap: !!getConfigOption('ipp.showMetadata.location', false)
     })
   }
 

@@ -1,257 +1,170 @@
-# Immich Public Proxy
+# Immich Public Proxy — GPS Fork
 
-<p align="center" width="100%">
-<a href="https://hub.docker.com/r/alangrainger/immich-public-proxy/tags">
-    <img alt="Docker pulls" src="https://badgen.net/docker/pulls/alangrainger/immich-public-proxy?icon=docker&label=docker%20pulls&color=green&scale=1.1"></a>
-<a href="https://github.com/alangrainger/immich-public-proxy/releases/latest">
-    <img alt="Latest release" src="https://badgen.net/github/release/alangrainger/immich-public-proxy?scale=1.1"></a>
-<a href="https://immich-demo.note.sx/share/gJfs8l4LcJJrBUpjhMnDoKXFt1Tm5vKXPbXl8BgwPtLtEBCOOObqbQdV5i0oun5hZjQ"><img alt="Open demo gallery" src="https://badgen.net/static/↗🖼️/live%20demo/green?scale=1.1"></a>
-</p>
+> 🗺️ Fork of [immich-public-proxy](https://github.com/alangrainger/immich-public-proxy) with **GPS coordinates display** and **interactive map** (Leaflet + OpenStreetMap).
 
-Share your Immich photos and albums in a safe way without exposing your Immich instance to the public.
+Share your Immich photos and albums in a safe way without exposing your Immich instance to the public — now with photo location display!
 
-👉 See a [Live demo gallery](https://immich-demo.note.sx/share/gJfs8l4LcJJrBUpjhMnDoKXFt1Tm5vKXPbXl8BgwPtLtEBCOOObqbQdV5i0oun5hZjQ)
-serving straight out of my own Immich instance.
+## 🗺️ GPS & Map Features
 
-Setup takes less than a minute, and you never need to touch it again as all of your sharing stays managed within Immich.
+This fork adds the following features on top of the original immich-public-proxy:
 
-<p align="center" width="100%">
-<img src="docs/ipp.svg" width="200" height="200">
-</p>
+- **📍 GPS coordinates in lightbox** — When viewing a photo in the lightbox, clickable GPS coordinates are shown below the image (links to Google Maps search).
+- **🗺️ Interactive map** — An interactive OpenStreetMap map is displayed below the gallery, showing markers for all geolocated photos.
+- **🖼️ Photo thumbnails in map popups** — Click on a map marker to see the photo thumbnail.
+- **🆓 No API key required** — Uses [Leaflet](https://leafletjs.com/) + [OpenStreetMap](https://www.openstreetmap.org/) (100% free, no usage limits, no tracking).
+- **🔒 Privacy-first** — GPS display is disabled by default (`ipp.showMetadata.location: false`). You must explicitly opt-in.
+- **⚡ Lightweight** — Leaflet CSS+JS is only loaded when the map is actually needed (~40KB).
 
-### Table of Contents
+## 🐳 Build & Deploy with Docker Compose
 
-- [About this project](#about-this-project)
-- [Installation](#installation)
-  - [Install with Docker](#install-with-docker--podman)
-  - [Install with Kubernetes](docs/kubernetes.md)
-- [How to use it](#how-to-use-it)
-- [How it works](#how-it-works)
-- [Additional configuration](#additional-configuration)
-  - [IPP options](#immich-public-proxy-options)
-  - [lightGallery](#lightgallery)
-  - [Custom error pages](#customising-your-error-response-pages)
-  - [Serving from multiple domains](#serving-from-multiple-domains)
-- [Troubleshooting](#troubleshooting)
-- [Feature requests](#feature-requests)
+Since this is a fork, there is no pre-built Docker image on Docker Hub. You need to **build it yourself**.
 
-## About this project
+### Quick start
 
-[Immich](https://github.com/immich-app/immich) is a wonderful bit of software, but since it holds all your private photos it's 
-best to keep it fully locked down. This presents a problem when you want to share a photo or a gallery with someone.
-
-**Immich Public Proxy** provides a barrier of security between the public and Immich, and _only_ allows through requests
-which you have publicly shared.
-
-It is stateless and does not know anything about your Immich instance. It does not require an API key which reduces the attack 
-surface even further. The only things that the proxy can access are photos that you have made publicly available in Immich. 
-
-### Features
-
-- Supports sharing photos and videos.
-- Supports password-protected shares.
-- If sharing a single image, by default the link will directly open the image file so that you can embed it anywhere you would a normal image. (This is configurable.)
-- All usage happens through Immich - you won't need to touch this app after the initial configuration.
-
-### Why not simply put Immich behind a reverse proxy and only expose the `/share/` path to the public?
-
-To view a shared album in Immich, you need access to the `/api/` path. If you're sharing a gallery with the public, you need
-to make that path public. Any existing or future vulnerability has the potential to compromise your Immich instance.
-
-For me, the ideal setup is to have Immich secured privately behind mTLS or VPN, and only allow public access to Immich Public Proxy.
-Here is an example setup for [securing Immich behind mTLS](./docs/securing-immich-with-mtls.md) using a reverse proxy such as Caddy or Traefik.
-
-## Installation
-
-### Install with Docker / Podman
-
-1. Download the [docker-compose.yml](https://github.com/alangrainger/immich-public-proxy/blob/main/docker-compose.yml) file.
-
-2. Update the value for `IMMICH_URL` in your docker-compose file to point to your local URL for Immich. This should not be a public URL.
-
-3. Update or remove the value for `PUBLIC_BASE_URL`. This should be the public base URL for IPP, without a trailing slash (example `https://your-proxy-url.com`). 
-If you remove this value, it will dynamically generate it based on the request hostname. This can be useful if you are [serving from multiple domains](#serving-from-multiple-domains).
-
-4. _Optional_: Add `IPP_PORT` to environment variables in your docker-compose file to change the port from the default of 3000. 
-This is the _internal_ webserver port inside the container. Most people will not need to do this. Note that you will have to change the `ports` and `healthcheck` sections accordingly.
-
-5. Start the docker container. You can test that it is working by visiting `https://your-proxy-url.com/share/healthcheck`. 
-Check the container console output for any error messages.
+1. **Clone this repository:**
 
 ```bash
-docker-compose up -d
+git clone https://github.com/pinkfloydFR/immich-public-proxy-gps.git
+cd immich-public-proxy-gps
 ```
 
-5. Set the "External domain" in your Immich **Server Settings** to be whatever domain you use to publicly serve Immich Public Proxy:
-
-<img src="docs/server-settings.png" width="400" height="182">
-
-Now whenever you share an image or gallery through Immich, it will automatically create the correct public path for you.
-
-🚨 **IMPORTANT**: If you're using Cloudflare, please make sure to set your `/share/video/*` path to Bypass Cache, otherwise you may
-run into video playback issues. See [Troubleshooting](#troubleshooting) for more information.
-
-#### Running alongside Immich on a single domain
-
-Because all IPP paths are under `/share/...`, you can run Immich Public Proxy and Immich on the same domain.
-
-See the instructions here: [Running on a single domain](./docs/running-on-single-domain.md).
-
-### Install with Kubernetes
-
-[See the docs here](docs/kubernetes.md).
-
-## How to use it
-
-Other than the initial configuration above, everything else is managed through Immich.
-
-You share your photos/videos as normal through Immich. Because you have set the **External domain** in Immich settings
-to be the URL for your proxy app, the links that Immich generates will automaticaly have the correct URL:
-
-<img src="docs/share-link.webp" width="751" height="524">
-
-## How it works
-
-When the proxy receives a request, it will come as a link like this:
-
-```
-https://your-proxy-url.com/share/ffSw63qnIYMtpmg0RNvOui0Dpio7BbxsObjvH8YZaobIjIAzl5n7zTX5d6EDHdOYEvo
-```
-
-The part after `/share/` is Immich's shared link public ID (called the `key` [in the docs](https://immich.app/docs/api/get-my-shared-link)).
-
-**Immich Public Proxy** takes that key and makes an API call to your Immich instance over your local network, to ask what
-photos or videos are shared in that share URL.
-
-If it is a valid share URL, the proxy fetches just those assets via local API and returns them to the visitor as an
-individual image or gallery.
-
-If the shared link has expired or any of the assets have been put in the Immich trash, it will not return those.
-
-All incoming data is validated and sanitised, and anything unexpected is simply dropped with a 404.
-
-## Additional configuration
-
-There are some additional configuration options you can change, for example the way the gallery is set up.
-
-1. Make a copy of [config.json](https://github.com/alangrainger/immich-public-proxy/blob/main/app/config.json) in the same folder as your `docker-compose.yml`.
-
-2. Pass the config to your docker container by adding a volume like this:
+2. **Create your `docker-compose.yml`:**
 
 ```yaml
+services:
+  immich-public-proxy:
+    build: .
+    container_name: immich-public-proxy-gps
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      IMMICH_URL: http://your-immich-server:2283
+      PUBLIC_BASE_URL: https://your-proxy-url.com
     volumes:
-      - ./config.json:/app/config.json
+      - ./config.json:/app/config.json:ro
+    healthcheck:
+      test: curl -s http://localhost:3000/share/healthcheck -o /dev/null || exit 1
+      start_period: 10s
+      timeout: 5s
 ```
 
-3. Restart your container and your custom configuration should be active.
+> **Note:** Use `build: .` instead of `image:` since we're building from source.
 
-Alternatively, you can [pass the configuration inline](docs/inline-configuration.md) from your `docker-compose.yml` file.
-
-### Immich Public Proxy options
-
-| Option                   | Type     | Description                                                                                                                                                                                                                                                       |
-|--------------------------|----------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `responseHeaders`        | `object` | Change the headers sent with your web responses. By default there is `cache-control` and CORS added.                                                                                                                                                              |
-| `singleImageGallery`     | `bool`   | By default a link to a single image will directly open the image file. Set to `true` if you want to show a gallery page instead for a single item.                                                                                                                |
-| `downloadOriginalPhoto`  | `bool`   | Set to `false` if you only want people to be able to download the 'preview' quality photo, rather than your original photo.                                                                                                                                       |
-| `downloadedFilename`     | `int`    | The filename of the downloaded image.<br>`0` for the original filename if available, falling back to the Immich asset ID<br>`1` for the Immich asset ID number<br>`2` for a shortened version of the asset ID: `img_` plus the first 8 characters of the asset ID |
-| `showGalleryTitle`       | `bool`   | Show a title on the gallery page. This is taken from the album title if it is an album being shared, otherwise the "Description" from the shared link will be used.                                                                                               |
-| `showGalleryDescription` | `bool`   | Show the album description below the title. This only applies if it is an album which is being shared.                                                                                                                                                            |
-| `allowDownloadAll`       | `int`    | Allow visitors to download all files as a zip.<br>`0` disable downloads<br>`1` follow Immich setting per share ([example](https://github.com/user-attachments/assets/79ea8c08-71ce-42ab-b025-10aec384938a))<br>`2` always allowed                                 |
-| `allowSlugLinks`         | `bool`   | Enable/disable the custom URL links.                                                                                                                                                                                                                              |
-| `showHomePage`           | `bool`   | Set to `false` to remove the IPP shield page at `/` and at `/share`                                                                                                                                                                                               |
-| `showMetadata`           | `object` | See the [Metadata](#metadata) section below.                                                                                                                                                                                                                      |
-| `customInvalidResponse`  | various  | Send a custom response instead of the default 404 - see [Custom responses](docs/custom-responses.md) for more details.                                                                                                                                            |
-
-For example, to disable the home page at `/` and at `/share` you need to change `showHomePage` to `false`:
+3. **Create your `config.json`** (in the same directory):
 
 ```json
 {
   "ipp": {
-    "showHomePage": false,
-    ...
-  }
-}
-```
-
-#### Metadata
-
-| Option        | Type   | Description                                        |
-|---------------|--------|----------------------------------------------------|
-| `description` | `bool` | Show the description as a caption below the photo. |
-
-### lightGallery
-
-The gallery is created using [lightGallery](https://github.com/sachinchoolur/lightGallery).
-You can find all of lightGallery's settings here:
-https://www.lightgalleryjs.com/docs/settings/
-
-For example, to disable the download button for images, you would edit the `lightGallery` section and change `download` to `false`:
-
-```json
-{
+    "showMetadata": {
+      "description": false,
+      "location": true
+    },
+    "showGalleryTitle": true,
+    "showHomePage": true,
+    "downloadOriginalPhoto": true,
+    "allowDownloadAll": 1,
+    "singleImageGallery": false,
+    "singleItemAutoOpen": true
+  },
   "lightGallery": {
     "controls": true,
-    "download": false,
+    "download": true,
+    "customSlideName": true,
     "mobileSettings": {
       "controls": false,
       "showCloseIcon": true,
-      "download": false
+      "download": true
     }
   }
 }
 ```
 
-### Customising your error response pages
+4. **Build and start:**
 
-You can customise the responses that IPP sends for invalid requests. For example you could:
+```bash
+docker compose up -d --build
+```
 
-- Drop the connection entirely (no response).
-- Redirect to a new website.
-- Send a different status code.
-- Send a custom 404 page.
-- And so on...
+5. **Verify it's running:**
 
-See [Custom responses](docs/custom-responses.md) for more details.
+```bash
+curl http://localhost:3000/share/healthcheck
+# Should return: ok
+```
 
-### Serving from multiple domains
+### Rebuild after updates
 
-If you're serving the same IPP from multiple domains, instead of setting the public URL in your docker-compose file, you can set it dynamically via a HTTP header in the request from your reverse proxy to IPP.
+```bash
+git pull
+docker compose up -d --build
+```
 
-1. Remove the `PUBLIC_BASE_URL` environment variable from your docker-compose file.
+### Environment variables
 
-2. Set a custom `publicBaseUrl` header on each request with the value of your public base URL (example `https://your-proxy-url.com`).
+| Variable | Required | Description |
+|---|---|---|
+| `IMMICH_URL` | ✅ | Internal URL of your Immich instance (e.g. `http://immich:2283`). **Not** a public URL. |
+| `PUBLIC_BASE_URL` | Optional | Public URL for the proxy (e.g. `https://photos.example.com`). Used for `og:image` meta tags. If omitted, it will be auto-detected from the request. |
+| `IPP_PORT` | Optional | Internal port (default: `3000`). |
 
-## Troubleshooting
+## Configuration
 
-### Video playback
+### GPS / Location options
 
-If you're using Cloudflare and having issues with videos not playing well, make sure your `/share/video/` paths are set to bypass cache.
-I ran into this issue myself, and found [some helpful advice here](https://community.cloudflare.com/t/mp4-wont-load-in-safari-using-cloudflare/10587/48).
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `ipp.showMetadata.location` | `bool` | `false` | Enable GPS coordinates display and interactive map. |
+| `ipp.showMetadata.description` | `bool` | `false` | Show the photo description as a caption in the lightbox. |
 
-<a href="docs/cloudflare-video-cache.webp"><img src="docs/cloudflare-video-cache.webp" style="width:70%"></a>
+When `location` is `true`:
+- **In the lightbox**: A clickable `📍 lat, lng` link appears below each photo (opens Google Maps in a new tab).
+- **Below the gallery**: An interactive Leaflet/OpenStreetMap map shows all geolocated photos with markers. Click a marker to see the photo thumbnail.
 
-I use Linux/Android, so this project is tested with BrowserStack for Apple/Windows devices.
+### All IPP options
 
-### Can't reach Immich using `localhost:2283`
+| Option | Type | Description |
+|---|---|---|
+| `responseHeaders` | `object` | Change the headers sent with your web responses. |
+| `singleImageGallery` | `bool` | Show a gallery page for single image links (default: directly opens the image). |
+| `downloadOriginalPhoto` | `bool` | Set to `false` to only allow preview-quality downloads. |
+| `downloadedFilename` | `int` | `0` = original filename, `1` = Immich asset ID, `2` = sanitised ID. |
+| `showGalleryTitle` | `bool` | Show album title on the gallery page. |
+| `showGalleryDescription` | `bool` | Show album description below the title. |
+| `allowDownloadAll` | `int` | `0` = disabled, `1` = follow Immich setting, `2` = always enabled. |
+| `allowSlugLinks` | `bool` | Enable/disable custom URL slug links. |
+| `showHomePage` | `bool` | Show the IPP shield page at `/` and `/share`. |
+| `showMetadata` | `object` | See GPS/Location options above. |
+| `customInvalidResponse` | various | Custom 404 response — see upstream docs. |
 
-This is a normal Docker thing, nothing to do with IPP.
+### lightGallery
 
-From inside a Docker container, you can't reach another container using `localhost`. You need to use a Docker network IP or your server's IP address.
+The gallery is created using [lightGallery](https://github.com/sachinchoolur/lightGallery). See all settings: https://www.lightgalleryjs.com/docs/settings/
 
-[Here's a guide on connecting Docker containers](https://dionarodrigues.dev/blog/docker-networking-how-to-connect-different-containers).
+## How to use it
 
-## Feature requests
+1. Set the **External domain** in your Immich **Server Settings** to your proxy's public URL.
+2. Share photos/albums normally through Immich — the links will automatically use your proxy URL.
+3. That's it! All sharing is managed through Immich.
 
-You can [add feature requests here](https://github.com/alangrainger/immich-public-proxy/discussions/categories/feature-requests?discussions_q=is%3Aopen+category%3A%22Feature+Requests%22+sort%3Atop),
-however my goal with this project is to keep it as lean as possible.
+## How it works
 
-Due to the sensitivity of data contained within Immich, I want anyone with a bit of coding knowledge
-to be able to read this codebase and fully understand everything it is doing.
+When the proxy receives a shared link request, it:
+1. Validates the share key format.
+2. Makes an API call to your Immich instance over the local network.
+3. Fetches the shared assets and returns them as a gallery (with GPS data if enabled).
+4. Expired or trashed assets are automatically excluded.
 
-The most basic rule for this project is that it has **read-only** access to Immich.
+All incoming data is validated and sanitised. Anything unexpected returns a 404.
 
-Things that will not be considered for this project are:
+## Credits
 
-- Anything that modifies Immich or its files in any way. If it requires an API key or privileged accesss, it won't be considered as a new feature.
-- Uploading photos (see above).
+- Original project: [immich-public-proxy](https://github.com/alangrainger/immich-public-proxy) by [Alan Grainger](https://github.com/alangrainger)
+- Map: [Leaflet](https://leafletjs.com/) + [OpenStreetMap](https://www.openstreetmap.org/)
+- Gallery: [lightGallery](https://github.com/sachinchoolur/lightGallery)
+- Photo management: [Immich](https://github.com/immich-app/immich)
+
+## License
+
+AGPL-3.0 — Same as the original project.
+

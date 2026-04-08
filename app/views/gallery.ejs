@@ -16,6 +16,13 @@
     <link rel="icon" href="/share/static/favicon.ico" type="image/x-icon">
     <link type="text/css" rel="stylesheet" href="/share/static/style.css"/>
     <link type="text/css" rel="stylesheet" href="/share/static/lg/lightgallery-bundle.min.css"/>
+<%
+const hasGpsItems = items.some(i => i.latitude != null && i.longitude != null);
+if (typeof showMap !== 'undefined' && showMap && hasGpsItems) {
+%>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<% } %>
 </head>
 <body>
 <div id="header">
@@ -47,30 +54,36 @@
 <% if (items.length > 50) { %><div id="loading-spinner"><span class="loader"></span></div><% } %>
 <%
 const gpsItems = items.filter(i => i.latitude != null && i.longitude != null);
-if (googleMapsApiKey && gpsItems.length > 0) {
+if (typeof showMap !== 'undefined' && showMap && gpsItems.length > 0) {
 %>
-<div id="map-container" style="margin: 16px 4px;">
+<div id="map-container">
   <h3>📍 Locations</h3>
   <div id="map"></div>
 </div>
 <script>
-function initMap() {
-  const gpsData = <%- JSON.stringify(gpsItems.map(i => ({ lat: i.latitude, lng: i.longitude }))) %>;
-  const bounds = new google.maps.LatLngBounds();
-  const map = new google.maps.Map(document.getElementById('map'), {
-    zoom: 10,
-    mapTypeId: 'roadmap'
-  });
+(function() {
+  var gpsData = <%- JSON.stringify(gpsItems.map(i => ({ lat: i.latitude, lng: i.longitude, thumb: i.thumbnailUrl }))) %>;
+  var map = L.map('map');
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    maxZoom: 19
+  }).addTo(map);
+  var markers = [];
   gpsData.forEach(function(item) {
-    const pos = { lat: item.lat, lng: item.lng };
-    bounds.extend(pos);
-    new google.maps.Marker({ position: pos, map: map });
+    var marker = L.marker([item.lat, item.lng]).addTo(map);
+    if (item.thumb) {
+      marker.bindPopup('<img src="' + item.thumb + '" style="max-width:150px;max-height:150px;border-radius:4px;" loading="lazy" />');
+    }
+    markers.push(marker);
   });
-  map.fitBounds(bounds);
-  if (gpsData.length === 1) map.setZoom(14);
-}
+  if (markers.length === 1) {
+    map.setView([gpsData[0].lat, gpsData[0].lng], 14);
+  } else if (markers.length > 1) {
+    var group = L.featureGroup(markers);
+    map.fitBounds(group.getBounds().pad(0.1));
+  }
+})();
 </script>
-<script src="https://maps.googleapis.com/maps/api/js?key=<%= googleMapsApiKey %>&callback=initMap" async defer></script>
 <% } %>
 <script src="/share/static/web.js"></script>
 <script src="/share/static/lg/lightgallery.min.js"></script>
