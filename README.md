@@ -24,11 +24,13 @@ Setup takes less than a minute, and you never need to touch it again as all of y
 - [About this project](#about-this-project)
 - [Installation](#installation)
   - [Install with Docker](#install-with-docker--podman)
+  - [Build the image locally](#building-the-image-locally)
   - [Install with Kubernetes](docs/kubernetes.md)
 - [How to use it](#how-to-use-it)
 - [How it works](#how-it-works)
 - [Additional configuration](#additional-configuration)
   - [IPP options](#immich-public-proxy-options)
+  - [GPS / Location feature](#gps--location-feature)
   - [lightGallery](#lightgallery)
   - [Custom error pages](#customising-your-error-response-pages)
   - [Serving from multiple domains](#serving-from-multiple-domains)
@@ -51,6 +53,7 @@ surface even further. The only things that the proxy can access are photos that 
 - Supports sharing photos and videos.
 - Supports password-protected shares.
 - If sharing a single image, by default the link will directly open the image file so that you can embed it anywhere you would a normal image. (This is configurable.)
+- **GPS / Location support**: optionally display GPS coordinates as a clickable OpenStreetMap link and show an interactive map with photo markers below the gallery (see [GPS / Location feature](#gps--location-feature)).
 - All usage happens through Immich - you won't need to touch this app after the initial configuration.
 
 ### Why not simply put Immich behind a reverse proxy and only expose the `/share/` path to the public?
@@ -96,6 +99,59 @@ run into video playback issues. See [Troubleshooting](#troubleshooting) for more
 Because all IPP paths are under `/share/...`, you can run Immich Public Proxy and Immich on the same domain.
 
 See the instructions here: [Running on a single domain](./docs/running-on-single-domain.md).
+
+### Building the image locally
+
+If you want to run a locally modified version (e.g. after cloning this fork), you can build the Docker image yourself instead of pulling it from Docker Hub.
+
+1. Clone the repository (if you haven't already):
+
+```bash
+git clone https://github.com/pinkfloydFR/immich-public-proxy-gps.git
+cd immich-public-proxy-gps
+```
+
+2. Build the image with a custom tag:
+
+```bash
+docker build -t immich-public-proxy-gps:local .
+```
+
+3. Reference your locally built image in `docker-compose.yml` by replacing the `image:` line with a `build:` directive **or** by pointing to your local tag:
+
+**Option A – build directly from source (recommended for development):**
+
+```yaml
+services:
+  immich-public-proxy:
+    build: .
+    container_name: immich-public-proxy
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      PUBLIC_BASE_URL: https://your-proxy-url.com
+      IMMICH_URL: http://your-internal-immich-server:2283
+    healthcheck:
+      test: curl -s http://localhost:3000/share/healthcheck -o /dev/null || exit 1
+      start_period: 10s
+      timeout: 5s
+```
+
+**Option B – use the pre-built local tag:**
+
+```yaml
+services:
+  immich-public-proxy:
+    image: immich-public-proxy-gps:local
+    ...
+```
+
+4. Start the stack:
+
+```bash
+docker-compose up -d
+```
 
 ### Install with Kubernetes
 
@@ -180,6 +236,28 @@ For example, to disable the home page at `/` and at `/share` you need to change 
 |---------------|--------|----------------------------------------------------|
 | `description` | `bool` | Show the description as a caption below the photo. |
 | `location`    | `bool` | Show GPS coordinates as a clickable link (OpenStreetMap) below the photo in the lightbox, and display an interactive map with markers below the gallery. |
+
+##### GPS / Location feature
+
+When `location` is set to `true`, two things happen for photos that contain GPS metadata:
+
+1. **Lightbox**: A clickable 📍 link with the decimal coordinates is shown below each photo. Clicking it opens [OpenStreetMap](https://www.openstreetmap.org/) centred on that location.
+
+2. **Interactive map**: An interactive [Leaflet](https://leafletjs.com/) map using OpenStreetMap tiles is rendered below the gallery. Each geotagged photo appears as a marker on the map; clicking a marker opens a thumbnail preview.
+
+To enable the GPS feature, set `location` to `true` in your `config.json`:
+
+```json
+{
+  "ipp": {
+    "showMetadata": {
+      "location": true
+    }
+  }
+}
+```
+
+> **Note**: Photos that do not have GPS EXIF data are simply skipped — neither the link nor the map marker will appear for them.
 
 ### lightGallery
 
