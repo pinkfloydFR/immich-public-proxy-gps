@@ -14,7 +14,8 @@
     "showGalleryTitle": false,
     "showGalleryDescription": false,
     "showMetadata": {
-      "description": false
+      "description": false,
+      "location": false
     },
     "customInvalidResponse": false
   },

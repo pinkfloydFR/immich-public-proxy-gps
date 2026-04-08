@@ -12,6 +12,8 @@ export enum KeyType {
 
 export interface ExifInfo {
   description?: string;
+  latitude?: number | null;
+  longitude?: number | null;
 }
 
 export enum AlbumType {
