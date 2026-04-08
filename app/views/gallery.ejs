@@ -45,6 +45,33 @@
     <% }) %>
 </div>
 <% if (items.length > 50) { %><div id="loading-spinner"><span class="loader"></span></div><% } %>
+<%
+const gpsItems = items.filter(i => i.latitude != null && i.longitude != null);
+if (googleMapsApiKey && gpsItems.length > 0) {
+%>
+<div id="map-container" style="margin: 16px 4px;">
+  <h3>📍 Locations</h3>
+  <div id="map"></div>
+</div>
+<script>
+function initMap() {
+  const gpsData = <%- JSON.stringify(gpsItems.map(i => ({ lat: i.latitude, lng: i.longitude }))) %>;
+  const bounds = new google.maps.LatLngBounds();
+  const map = new google.maps.Map(document.getElementById('map'), {
+    zoom: 10,
+    mapTypeId: 'roadmap'
+  });
+  gpsData.forEach(function(item) {
+    const pos = { lat: item.lat, lng: item.lng };
+    bounds.extend(pos);
+    new google.maps.Marker({ position: pos, map: map });
+  });
+  map.fitBounds(bounds);
+  if (gpsData.length === 1) map.setZoom(14);
+}
+</script>
+<script src="https://maps.googleapis.com/maps/api/js?key=<%= googleMapsApiKey %>&callback=initMap" async defer></script>
+<% } %>
 <script src="/share/static/web.js"></script>
 <script src="/share/static/lg/lightgallery.min.js"></script>
 <script src="/share/static/lg/lg-fullscreen.min.js"></script>

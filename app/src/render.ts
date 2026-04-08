@@ -137,11 +137,25 @@ class Render {
       const previewUrl = immich.photoUrl(share.key, asset.id, immich.getPreviewImageSize(asset))
       const description = getConfigOption('ipp.showMetadata.description', false) && typeof asset?.exifInfo?.description === 'string' ? escapeHtml(asset.exifInfo.description) : ''
 
+      // Extract GPS coordinates if location display is enabled
+      const showLocation = getConfigOption('ipp.showMetadata.location', false)
+      const lat = asset.exifInfo?.latitude
+      const lng = asset.exifInfo?.longitude
+      const hasGps = showLocation && typeof lat === 'number' && typeof lng === 'number'
+
+      // Build sub-html parts (caption shown below images in the lightbox)
+      const subHtmlParts: string[] = []
+      if (description) subHtmlParts.push(`<p>${description}</p>`)
+      if (hasGps) {
+        subHtmlParts.push(`<p><a href="https://www.google.com/maps?q=${lat},${lng}" target="_blank" rel="noopener" class="gps-link">📍 ${lat.toFixed(6)}, ${lng.toFixed(6)}</a></p>`)
+      }
+      const subHtml = subHtmlParts.join('')
+
       // Create the full HTML element source to pass to the gallery view
       const itemHtml = [
         video ? `<a data-video='${video}'` : `<a href="${previewUrl}"`,
         downloadUrl ? ` data-download-url="${downloadUrl}"` : '',
-        description ? ` data-sub-html='<p>${description}</p>'` : '',
+        subHtml ? ` data-sub-html='${subHtml}'` : '',
         ` data-download="${this.getFilename(asset)}" data-slide-name="${asset.id}"><img alt="${description}" loading="lazy" src="${thumbnailUrl}" onerror="this.closest('a').classList.add('thumb-error')"/>`,
         video ? '<div class="play-icon"></div>' : '',
         '</a>'
@@ -150,7 +164,9 @@ class Render {
       return {
         html: itemHtml,
         thumbnailUrl,
-        previewUrl
+        previewUrl,
+        latitude: hasGps ? lat : null,
+        longitude: hasGps ? lng : null
       }
     }))
 
@@ -163,7 +179,8 @@ class Render {
       path: '/share/' + share.key,
       showDownload: canDownload(share),
       showTitle: getConfigOption('ipp.showGalleryTitle', false),
-      lgConfig: getConfigOption('lightGallery', {})
+      lgConfig: getConfigOption('lightGallery', {}),
+      googleMapsApiKey: process.env.GOOGLE_MAPS_API_KEY || ''
     })
   }
 
