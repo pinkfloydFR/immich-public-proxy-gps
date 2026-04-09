@@ -64,5 +64,25 @@ class LGallery {
       spinner.remove()
     }
   }
+
+  /**
+   * Open the lightGallery viewer at a specific item index, loading items first if needed
+   */
+  openAtIndex (index) {
+    if (index >= this.index) {
+      // Load items up to and including the target index
+      this.items
+        .slice(this.index, index + 1)
+        .forEach(item => {
+          this.element.insertAdjacentHTML('beforeend', item.html + '\n')
+        })
+      this.index = index + 1
+      this.lightGallery.refresh()
+    }
+    // Brief delay to allow lightGallery's refresh() to finish updating the DOM
+    setTimeout(() => {
+      this.lightGallery.openGallery(index)
+    }, 50)
+  }
 }
 const lgallery = new LGallery()
