@@ -90,6 +90,60 @@ if (showMap && gpsItems.length > 0) {
     const group = L.featureGroup(markers);
     map.fitBounds(group.getBounds().pad(0.1));
   }
+
+  // Fullscreen control
+  const ICON_EXPAND = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><path d="M1 1h4V0H0v5h1V1zm8-1v1h4v4h1V0H9zm4 13H9v1h5V9h-1v4zM1 9H0v5h5v-1H1V9z"/></svg>';
+  const ICON_COMPRESS = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><path d="M5 0H4v4H0v1h5V0zm4 0v5h5V4H9V0H8zM0 9v1h4v4h1V9H0zm9 5h1V9H5v1h4v4z"/></svg>';
+
+  const FullscreenControl = L.Control.extend({
+    options: { position: 'topleft' },
+    _fsHandler: null,
+    onAdd: function (m) {
+      const container = L.DomUtil.create('div', 'leaflet-bar leaflet-control leaflet-control-fullscreen');
+      const btn = L.DomUtil.create('a', '', container);
+      btn.href = '#';
+      btn.title = 'Plein écran';
+      btn.setAttribute('role', 'button');
+      btn.innerHTML = ICON_EXPAND;
+
+      function updateIcon () {
+        if (document.fullscreenElement) {
+          btn.title = 'Quitter le plein écran';
+          btn.innerHTML = ICON_COMPRESS;
+        } else {
+          btn.title = 'Plein écran';
+          btn.innerHTML = ICON_EXPAND;
+        }
+      }
+
+      this._fsHandler = function () {
+        updateIcon();
+        m.invalidateSize();
+      };
+
+      L.DomEvent.on(btn, 'click', function (e) {
+        L.DomEvent.stopPropagation(e);
+        L.DomEvent.preventDefault(e);
+        const mapEl = m.getContainer();
+        if (!document.fullscreenElement) {
+          mapEl.requestFullscreen();
+        } else {
+          document.exitFullscreen();
+        }
+      });
+
+      document.addEventListener('fullscreenchange', this._fsHandler);
+
+      return container;
+    },
+    onRemove: function () {
+      if (this._fsHandler) {
+        document.removeEventListener('fullscreenchange', this._fsHandler);
+        this._fsHandler = null;
+      }
+    }
+  });
+  new FullscreenControl().addTo(map);
 })();
 </script>
 <% } %>
