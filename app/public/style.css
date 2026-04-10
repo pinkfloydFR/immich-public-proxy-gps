@@ -136,3 +136,19 @@ html {
     color: #adf;
     text-decoration: underline;
 }
+
+#map:-webkit-full-screen {
+    width: 100%;
+    height: 100%;
+}
+
+#map:fullscreen {
+    width: 100%;
+    height: 100%;
+}
+
+.leaflet-control-fullscreen a {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
