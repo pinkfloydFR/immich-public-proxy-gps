@@ -9,6 +9,7 @@
 
 import type { InitParams } from '../shared/types.js'
 import { state } from './state.js'
+import { initLocationMap } from './location-map.js'
 import { setupToolbar } from './selection.js'
 import { initLightbox, openLightbox } from './lightbox.js'
 import { computeLayoutAndRender, onScroll } from './virtualisation.js'
@@ -31,6 +32,7 @@ function init () {
 
   setupToolbar()
   initLightbox()
+  initLocationMap()
 
   let resizeFrame: number | undefined
   const resizeObserver = new ResizeObserver(() => {

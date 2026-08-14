@@ -5,36 +5,36 @@
       "Access-Control-Allow-Origin":  "*"
     },
     "maxDownloadQuality": "original",
-    "maxZoomQuality": "preview",
+    "maxZoomQuality": "fullsize",
     "downloadedFilename": 0,
-    "allowDownload": 0,
+    "allowDownload": 1,
     "downloadFromImmichConcurrencyLimit": 20,
     "allowSlugLinks": true,
     "showHomePage": true,
     "showMetadata": {
       "description": {
-        "caption": false,
-        "sidebar": false
+        "caption": true,
+        "sidebar": true
       },
       "exif": {
-        "dateTimeOriginal": false,
-        "timeZone": false,
-        "fileName": false,
-        "dimensions": false,
-        "fileSize": false,
-        "make": false,
-        "model": false,
-        "lensModel": false,
-        "exposureTime": false,
-        "iso": false,
-        "fNumber": false,
-        "focalLength": false
+        "dateTimeOriginal": true,
+        "timeZone": true,
+        "fileName": true,
+        "dimensions": true,
+        "fileSize": true,
+        "make": true,
+        "model": true,
+        "lensModel": true,
+        "exposureTime": true,
+        "iso": true,
+        "fNumber": true,
+        "focalLength": true
       },
       "location": {
-        "city": false,
-        "state": false,
-        "country": false,
-        "gps": false,
+        "city": true,
+        "state": true,
+        "country": true,
+        "gps": true,
         "webLink": true
       }
     },
@@ -44,7 +44,7 @@
       "singleVideo": true,
       "singleItemAutoOpen": true,
       "showTitle": true,
-      "showDescription": false,
+      "showDescription": true,
       "showExpiryDate": false,
       "expiryDateFormat": "YYYY-MM-DD",
       "expiryDateLocale": "",
@@ -56,7 +56,8 @@
       "showArrows": true,
       "showDownload": true,
       "mobileArrows": false,
-      "autoPlayVideos": false
+      "autoPlayVideos": false,
+      "options": {}
     }
   }
 }

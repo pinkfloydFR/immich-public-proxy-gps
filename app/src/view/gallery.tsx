@@ -68,6 +68,14 @@ export function Gallery (props: GalleryProps) {
         <link type="text/css" rel="stylesheet" href={`/share/static/${ASSET_VERSION}/style.css`}/>
         <link type="text/css" rel="stylesheet" href="/share/static/photoswipe/photoswipe.css"/>
         <link type="text/css" rel="stylesheet" href={`/share/static/${ASSET_VERSION}/photoswipe-overrides.css`}/>
+        {props.metadataConfig.showLocationMap && (
+          <link
+            rel="stylesheet"
+            href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+            integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+            crossOrigin="anonymous"
+          />
+        )}
       </head>
       <body>
         {(showHeaderText || props.showDownloadZip) && (
@@ -99,6 +107,12 @@ export function Gallery (props: GalleryProps) {
 {/* Container is intentionally empty - web.js's virtualisation manager
             populates it with only the tiles within the viewport buffer. */}
         <div id="gallery"></div>
+        {props.metadataConfig.showLocationMap && (
+          <section id="map-container" hidden>
+            <h2>Locations</h2>
+            <div id="map"></div>
+          </section>
+        )}
         {props.showDownloadZip && (
           <div id="select-toolbar" hidden>
             <button id="select-cancel" class="toolbar-btn" type="button" aria-label="Exit selection mode">

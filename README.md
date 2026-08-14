@@ -238,11 +238,11 @@ The modern v3.x config uses explicit per-field flags. Location metadata is contr
 |---------------|--------|---------------------------------------------------------------------------------------------------------------------------------------------|
 | `description` | `object` | `caption` / `sidebar` booleans for the image caption and info sidebar.                                                                        |
 | `exif`        | `object` | Per-field EXIF flags such as `dateTimeOriginal`, `fileName`, `dimensions`, `make`, `model`, `focalLength`, etc.                              |
-| `location`    | `object` | Per-field location flags such as `city`, `state`, `country`, `gps`, and `webLink` for the OpenStreetMap link in the info sidebar.           |
+| `location`    | `object` | Per-field location flags such as `city`, `state`, `country`, `gps`, and `webLink`. When GPS is enabled, the gallery also renders the interactive map for geotagged photos. |
 
 ##### GPS / Location feature
 
-When `ipp.showMetadata.location.gps` is enabled, photos that include GPS metadata expose their coordinates in the info sidebar and link them to [OpenStreetMap](https://www.openstreetmap.org/).
+When `ipp.showMetadata.location.gps` is enabled, photos that include GPS metadata expose their coordinates in the info sidebar, link them to [OpenStreetMap](https://www.openstreetmap.org/), and appear on an interactive map below the gallery.
 
 To enable the GPS feature in the current config format:
 
@@ -261,7 +261,7 @@ To enable the GPS feature in the current config format:
 
 Legacy boolean configs from the older GPS fork are still accepted during startup via migration and are mapped to the modern shape automatically, so an old `"location": true` still works for the GPS flag.
 
-> **Note**: Photos without GPS EXIF data are simply skipped; no location row is rendered for them.
+> **Note**: Photos without GPS EXIF data are simply skipped; they do not get a location row and do not appear on the map. On album shares, the map fills progressively while per-asset metadata is fetched.
 
 ### lightGallery
 
