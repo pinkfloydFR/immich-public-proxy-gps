@@ -232,32 +232,36 @@ For example, to disable the home page at `/` and at `/share` you need to change 
 
 #### Metadata
 
-| Option        | Type   | Description                                        |
-|---------------|--------|----------------------------------------------------|
-| `description` | `bool` | Show the description as a caption below the photo. |
-| `location`    | `bool` | Show GPS coordinates as a clickable link (OpenStreetMap) below the photo in the lightbox, and display an interactive map with markers below the gallery. |
+The modern v3.x config uses explicit per-field flags. Location metadata is controlled under `ipp.showMetadata.location`.
+
+| Option        | Type   | Description                                                                                                                                 |
+|---------------|--------|---------------------------------------------------------------------------------------------------------------------------------------------|
+| `description` | `object` | `caption` / `sidebar` booleans for the image caption and info sidebar.                                                                        |
+| `exif`        | `object` | Per-field EXIF flags such as `dateTimeOriginal`, `fileName`, `dimensions`, `make`, `model`, `focalLength`, etc.                              |
+| `location`    | `object` | Per-field location flags such as `city`, `state`, `country`, `gps`, and `webLink` for the OpenStreetMap link in the info sidebar.           |
 
 ##### GPS / Location feature
 
-When `location` is set to `true`, two things happen for photos that contain GPS metadata:
+When `ipp.showMetadata.location.gps` is enabled, photos that include GPS metadata expose their coordinates in the info sidebar and link them to [OpenStreetMap](https://www.openstreetmap.org/).
 
-1. **Lightbox**: A clickable 📍 link with the decimal coordinates is shown below each photo. Clicking it opens [OpenStreetMap](https://www.openstreetmap.org/) centred on that location.
-
-2. **Interactive map**: An interactive [Leaflet](https://leafletjs.com/) map using OpenStreetMap tiles is rendered below the gallery. Each geotagged photo appears as a marker on the map; clicking a marker opens a thumbnail preview.
-
-To enable the GPS feature, set `location` to `true` in your `config.json`:
+To enable the GPS feature in the current config format:
 
 ```json
 {
   "ipp": {
     "showMetadata": {
-      "location": true
+      "location": {
+        "gps": true,
+        "webLink": true
+      }
     }
   }
 }
 ```
 
-> **Note**: Photos that do not have GPS EXIF data are simply skipped — neither the link nor the map marker will appear for them.
+Legacy boolean configs from the older GPS fork are still accepted during startup via migration and are mapped to the modern shape automatically, so an old `"location": true` still works for the GPS flag.
+
+> **Note**: Photos without GPS EXIF data are simply skipped; no location row is rendered for them.
 
 ### lightGallery
 

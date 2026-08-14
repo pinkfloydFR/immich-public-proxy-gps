@@ -1,6 +1,6 @@
 {
   "compilerOptions": {
-    "baseUrl": "src",
+    "rootDir": "src",
     "outDir": "dist",
     "inlineSourceMap": true,
     "inlineSources": true,
@@ -10,6 +10,7 @@
     "noImplicitAny": true,
     "esModuleInterop": true,
     "moduleResolution": "node",
+    "ignoreDeprecations": "6.0",
     "importHelpers": true,
     "isolatedModules": true,
     "strictNullChecks": true,
@@ -19,9 +20,20 @@
       "ES6",
       "ES7"
     ],
-    "allowSyntheticDefaultImports": true
+    "allowSyntheticDefaultImports": true,
+    "skipLibCheck": true,
+    "jsx": "react-jsx",
+    "jsxImportSource": "preact"
   },
   "include": [
-    "**/*.ts"
+    "**/*.ts",
+    "**/*.tsx"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "tests",
+    "vitest.config.ts",
+    "src/client"
   ]
 }

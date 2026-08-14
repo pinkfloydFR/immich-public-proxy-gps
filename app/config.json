@@ -4,29 +4,59 @@
       "Cache-Control": "public, max-age=2592000",
       "Access-Control-Allow-Origin":  "*"
     },
-    "singleImageGallery": false,
-    "singleItemAutoOpen": true,
-    "downloadOriginalPhoto": true,
+    "maxDownloadQuality": "original",
+    "maxZoomQuality": "preview",
     "downloadedFilename": 0,
-    "allowDownloadAll": 0,
+    "allowDownload": 0,
+    "downloadFromImmichConcurrencyLimit": 20,
     "allowSlugLinks": true,
     "showHomePage": true,
-    "showGalleryTitle": false,
-    "showGalleryDescription": false,
     "showMetadata": {
-      "description": false,
-      "location": false
+      "description": {
+        "caption": false,
+        "sidebar": false
+      },
+      "exif": {
+        "dateTimeOriginal": false,
+        "timeZone": false,
+        "fileName": false,
+        "dimensions": false,
+        "fileSize": false,
+        "make": false,
+        "model": false,
+        "lensModel": false,
+        "exposureTime": false,
+        "iso": false,
+        "fNumber": false,
+        "focalLength": false
+      },
+      "location": {
+        "city": false,
+        "state": false,
+        "country": false,
+        "gps": false,
+        "webLink": true
+      }
     },
-    "customInvalidResponse": false
-  },
-  "lightGallery": {
-    "controls": true,
-    "download": true,
-    "customSlideName": true,
-    "mobileSettings": {
-      "controls": false,
-      "showCloseIcon": true,
-      "download": true
+    "customInvalidResponse": false,
+    "gallery": {
+      "singleImage": false,
+      "singleVideo": true,
+      "singleItemAutoOpen": true,
+      "showTitle": true,
+      "showDescription": false,
+      "showExpiryDate": false,
+      "expiryDateFormat": "YYYY-MM-DD",
+      "expiryDateLocale": "",
+      "groupByDate": false,
+      "showDownloadZip": true,
+      "cacheTime": 300
+    },
+    "lightbox": {
+      "showArrows": true,
+      "showDownload": true,
+      "mobileArrows": false,
+      "autoPlayVideos": false
     }
   }
 }
