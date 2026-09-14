@@ -5,12 +5,11 @@ import { applyMeta, fetchDetail } from './metadata.js'
 
 declare global {
   interface Window {
-    L?: any
+    L?: any // eslint-disable-line @typescript-eslint/no-explicit-any
   }
 }
 
-type LeafletMap = any
-type LeafletBounds = any
+type LeafletBounds = any // eslint-disable-line @typescript-eslint/no-explicit-any
 
 const LEAFLET_CSS_HREF = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css'
 const LEAFLET_CSS_INTEGRITY = 'sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY='
@@ -18,7 +17,7 @@ const LEAFLET_JS_SRC = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'
 const LEAFLET_JS_INTEGRITY = 'sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo='
 const DETAIL_CONCURRENCY = 6
 
-let leafletPromise: Promise<any> | null = null
+let leafletPromise: Promise<any> | null = null // eslint-disable-line @typescript-eslint/no-explicit-any
 
 export function initLocationMap (): void {
   if (!state.metadataConfig.showLocationMap) return
@@ -27,7 +26,7 @@ export function initLocationMap (): void {
   const mapEl = document.getElementById('map')
   if (!(mapContainer instanceof HTMLElement) || !(mapEl instanceof HTMLElement)) return
 
-  void loadLeaflet().then((L) => {
+  loadLeaflet().then((L) => {
     const map = L.map(mapEl)
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
@@ -75,7 +74,7 @@ export function initLocationMap (): void {
     }
 
     state.items.forEach((item, index) => addMarker(item, index))
-    if (state.metaBase) void loadLazyDetails(addMarker)
+    if (state.metaBase) loadLazyDetails(addMarker)
   }).catch(() => {})
 }
 
@@ -99,7 +98,7 @@ async function loadLazyDetails (addMarker: (item: GalleryItem, index: number) =>
   await Promise.all(workers)
 }
 
-function loadLeaflet (): Promise<any> {
+function loadLeaflet (): Promise<any> { // eslint-disable-line @typescript-eslint/no-explicit-any
   if (window.L) return Promise.resolve(window.L)
   if (leafletPromise) return leafletPromise
 
