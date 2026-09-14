@@ -64,7 +64,8 @@ export const state = {
     descriptionInCaption: false,
     descriptionInSidebar: false,
     sidebarHasContent: false,
-    locationWebLink: false
+    locationWebLink: false,
+    showLocationMap: false
   } as MetadataConfig,
   // True while our pushed history entry is live
   lightboxPushedHistory: false,

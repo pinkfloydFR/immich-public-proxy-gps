@@ -19,7 +19,7 @@ type PswpInstance = any
 // forth - or prefetching a neighbour we then navigate to - reuses the fetch.
 const detailCache = new Map<string, Promise<AssetMetadata | null>>()
 
-function fetchDetail (id: string): Promise<AssetMetadata | null> {
+export function fetchDetail (id: string): Promise<AssetMetadata | null> {
   const cached = detailCache.get(id)
   if (cached) return cached
   const promise = fetch(state.metaBase + '/' + encodeURIComponent(id))
@@ -34,7 +34,7 @@ function fetchDetail (id: string): Promise<AssetMetadata | null> {
  * Only fills fields the server sent (all are config/share gated), so a share
  * with metadata disabled simply leaves them unset.
  */
-function applyMeta (item: GalleryItem, meta: AssetMetadata): void {
+export function applyMeta (item: GalleryItem, meta: AssetMetadata): void {
   if (meta.exif) item.exif = meta.exif
   if (meta.description) item.description = meta.description
   if (meta.downloadFilename) item.downloadFilename = meta.downloadFilename

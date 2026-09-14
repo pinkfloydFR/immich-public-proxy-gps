@@ -148,7 +148,8 @@ export async function gallery (res: Response, share: SharedLink, openItem?: numb
       descriptionInCaption,
       descriptionInSidebar,
       sidebarHasContent,
-      locationWebLink: !!getConfigOption('ipp.showMetadata.location.webLink', true)
+      locationWebLink: !!getConfigOption('ipp.showMetadata.location.webLink', true),
+      showLocationMap: shareMetadataAllowed && !!getConfigOption('ipp.showMetadata.location.gps', false)
     },
     groupByDate,
     metaBase
