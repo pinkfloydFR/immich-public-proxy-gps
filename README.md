@@ -72,6 +72,8 @@ The sections below cover this fork's own additions, which aren't part of the ups
 When `ipp.showMetadata.location.gps` is enabled, photos that include GPS metadata expose their coordinates in the info
 sidebar, link them to [OpenStreetMap](https://www.openstreetmap.org/), and appear on an interactive map below the gallery.
 
+To enable the GPS feature in the current config format:
+
 ```json
 {
   "ipp": {
