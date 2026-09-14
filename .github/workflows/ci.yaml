@@ -6,15 +6,15 @@ on:
     tags:
       - 'v*'
 
+env:
+  IMAGE_NAME: ${{ github.repository }}
+
 jobs:
   build-and-push-image:
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
-      # Required for actions/attest-build-provenance
-      id-token: write
-      attestations: write
 
     steps:
       - name: Checkout repository
@@ -37,7 +37,7 @@ jobs:
           password: ${{ secrets.DOCKER_HUB_TOKEN }}
 
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@v3.2.0
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -46,41 +46,20 @@ jobs:
         id: metadata
         uses: docker/metadata-action@v5
         with:
-          images: |
-            ${{ github.repository }}
-            ghcr.io/${{ github.repository }}
-          tags: |
-            type=semver,pattern={{version}},value=v${{ env.PACKAGE_VERSION }}
-            type=semver,pattern={{major}}.{{minor}},value=v${{ env.PACKAGE_VERSION }}
-            type=semver,pattern={{major}},value=v${{ env.PACKAGE_VERSION }}
-            type=raw,value=latest
+          images: ${{ github.repository }}
 
       - name: Build and push Docker image
-        id: build
         uses: docker/build-push-action@v5
         with:
           context: .
           file: Dockerfile
           push: true
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64,linux/arm64,linux/arm64/v8
           build-args: |
             PACKAGE_VERSION=${{ env.PACKAGE_VERSION }}
-          tags: ${{ steps.metadata.outputs.tags }}
-          labels: ${{ steps.metadata.outputs.labels }}
-          annotations: ${{ steps.metadata.outputs.annotations }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Attest GHCR image
-        uses: actions/attest-build-provenance@v2
-        with:
-          subject-name: ghcr.io/${{ github.repository }}
-          subject-digest: ${{ steps.build.outputs.digest }}
-          push-to-registry: true
-
-      - name: Attest Docker Hub image
-        uses: actions/attest-build-provenance@v2
-        with:
-          subject-name: docker.io/${{ github.repository }}
-          subject-digest: ${{ steps.build.outputs.digest }}
-          push-to-registry: true
+          tags: |
+            ${{ github.repository }}:${{ env.PACKAGE_VERSION }}
+            ${{ github.repository }}:latest
+            ghcr.io/${{ github.repository }}:${{ env.PACKAGE_VERSION }}
+            ghcr.io/${{ github.repository }}:latest
+          annotations: ${{ steps.metadata.output.annotations }}
