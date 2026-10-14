@@ -6,3 +6,12 @@ app/public/js/
 .directory
 /app/config.dev.json
 .npm-cache/
+
+# graft's local graph cache — regenerable, not committed (run `graft build`).
+/graft/
+
+# trail (outil de Claude Code) : fichiers locaux, jamais dans le dépôt
+/.claude/
+/.mcp.json
+/.ignore
+/.trail/
