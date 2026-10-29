@@ -42,6 +42,7 @@ export function initLocationMap (): void {
     // map no longer re-fits itself as lazy markers arrive, and the grid only
     // shows the photos whose pin is in view.
     let userMoved = false
+    let hoverPanning = false
     const filter = setupMapFilter(L, map, mapContainer, markers, () => {
       userMoved = false
       if (bounds) map.fitBounds(bounds.pad(0.1))
@@ -51,13 +52,21 @@ export function initLocationMap (): void {
         // The "show all" button is inside the map but isn't a map move
         if ((e.target as HTMLElement).closest('.ipp-map-filter')) return
         userMoved = true
+        hoverPanning = false
       }, { passive: true })
     }
-    // Centring on a hovered photo's pin must not refilter the grid under the pointer
-    let hoverPanUntil = 0
-    map.on('moveend', () => { if (userMoved && Date.now() >= hoverPanUntil) filter.apply() })
+    // Centring on a hovered photo's pin must not refilter the grid under the
+    // pointer. Leaflet fires moveend even when panTo doesn't move, so the flag
+    // is always consumed; a real map interaction clears it too.
+    map.on('moveend', () => {
+      if (hoverPanning) {
+        hoverPanning = false
+        return
+      }
+      if (userMoved) filter.apply()
+    })
     highlightMarkerOnTileHover(markers, (marker) => {
-      hoverPanUntil = Date.now() + 1000
+      hoverPanning = true
       map.panTo(marker.getLatLng())
     })
 
