@@ -152,6 +152,15 @@ export function computeLayoutAndRender () {
 }
 
 /**
+ * Recompute the layout even though the container width hasn't changed, e.g.
+ * after the map filter (`state.mapFilter`) changed which items are shown.
+ */
+export function relayout () {
+  state.lastContainerW = 0
+  computeLayoutAndRender()
+}
+
+/**
  * Walk the currently rendered tiles and toggle their `<img>` src based on
  * proximity to the viewport. Tiles within IMAGE_LOAD_MARGIN_PX get their
  * `data-src` promoted to `src` (browser fetches the thumbnail); tiles far

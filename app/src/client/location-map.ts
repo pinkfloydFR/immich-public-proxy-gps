@@ -2,6 +2,7 @@ import type { GalleryItem } from '../shared/types.js'
 import { state } from './state.js'
 import { openLightbox } from './lightbox.js'
 import { applyMeta, fetchDetail } from './metadata.js'
+import { relayout } from './virtualisation.js'
 
 declare global {
   interface Window {
@@ -37,11 +38,32 @@ export function initLocationMap (): void {
     const markers = new Map<number, any>() // eslint-disable-line @typescript-eslint/no-explicit-any
     let bounds: LeafletBounds | null = null
     let markerCount = 0
+    // Set once the visitor drags, zooms or scrolls the map. From then on the
+    // map no longer re-fits itself as lazy markers arrive, and the grid only
+    // shows the photos whose pin is in view.
+    let userMoved = false
+    const filter = setupMapFilter(L, map, mapContainer, markers, () => {
+      userMoved = false
+      if (bounds) map.fitBounds(bounds.pad(0.1))
+    })
+    for (const type of ['mousedown', 'touchstart', 'wheel', 'dblclick', 'keydown']) {
+      mapEl.addEventListener(type, (e) => {
+        // The "show all" button is inside the map but isn't a map move
+        if ((e.target as HTMLElement).closest('.ipp-map-filter')) return
+        userMoved = true
+      }, { passive: true })
+    }
+    // Centring on a hovered photo's pin must not refilter the grid under the pointer
+    let hoverPanUntil = 0
+    map.on('moveend', () => { if (userMoved && Date.now() >= hoverPanUntil) filter.apply() })
+    highlightMarkerOnTileHover(markers, (marker) => {
+      hoverPanUntil = Date.now() + 1000
+      map.panTo(marker.getLatLng())
+    })
 
     // The map column changes size when it first appears and when the window
     // resizes; Leaflet only redraws its tiles after invalidateSize()
     new ResizeObserver(() => map.invalidateSize()).observe(mapEl)
-    highlightMarkerOnTileHover(markers)
 
     const addMarker = (item: GalleryItem, index: number): void => {
       const lat = item.exif?.latitude
@@ -72,8 +94,10 @@ export function initLocationMap (): void {
         map.setView([lat, lng], 14)
       } else {
         bounds.extend([lat, lng])
-        map.fitBounds(bounds.pad(0.1))
+        if (!userMoved) map.fitBounds(bounds.pad(0.1))
       }
+      // A pin that arrives (lazy album metadata) while the grid is filtered
+      if (userMoved) filter.scheduleApply()
 
       if (markerCount === 1) {
         requestAnimationFrame(() => map.invalidateSize())
@@ -86,20 +110,93 @@ export function initLocationMap (): void {
 }
 
 /**
- * Highlight the marker of the grid tile under the pointer. Tiles are
- * virtualised, so this listens on the grid container and reads the tile's
- * `data-index`.
+ * Fork: filter the grid to the photos whose pin is inside the map's visible
+ * area. A control on the map shows how many photos are listed and a button
+ * to show them all again (which also re-fits the map to every pin).
  */
-function highlightMarkerOnTileHover (markers: Map<number, any>): void { // eslint-disable-line @typescript-eslint/no-explicit-any
+function setupMapFilter (
+  L: any, map: any, mapContainer: HTMLElement, markers: Map<number, any>, // eslint-disable-line @typescript-eslint/no-explicit-any
+  onReset: () => void
+): { apply: () => void, scheduleApply: () => void } {
+  const box = document.createElement('div')
+  box.className = 'ipp-map-filter leaflet-bar'
+  box.hidden = true
+  const label = document.createElement('span')
+  const button = document.createElement('button')
+  button.type = 'button'
+  button.textContent = 'Show all'
+  box.append(label, button)
+  L.DomEvent.disableClickPropagation(box)
+  L.DomEvent.disableScrollPropagation(box)
+  const Control = L.Control.extend({ onAdd: () => box })
+  new Control({ position: 'topright' }).addTo(map)
+
+  const setFilter = (next: Set<number> | null): void => {
+    const before = state.mapFilter
+    state.mapFilter = next
+    box.hidden = !next
+    if (next) label.textContent = next.size + ' of ' + state.items.length + ' photos'
+    if (sameSet(before, next)) return
+    relayout()
+    // Side by side, the map is sticky: bring the top of the (now shorter)
+    // grid into view. Stacked on a phone, the visitor is at the map; leave it.
+    if (state.container && getComputedStyle(mapContainer).position === 'sticky') {
+      const top = state.container.getBoundingClientRect().top
+      if (top < 0) window.scrollTo({ top: window.scrollY + top - 16, behavior: 'instant' })
+    }
+  }
+
+  const apply = (): void => {
+    const view = map.getBounds()
+    const inView = new Set<number>()
+    for (const [index, marker] of markers) {
+      if (view.contains(marker.getLatLng())) inView.add(index)
+    }
+    setFilter(inView)
+  }
+
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const scheduleApply = (): void => {
+    clearTimeout(timer)
+    timer = setTimeout(apply, 300)
+  }
+
+  button.addEventListener('click', () => {
+    clearTimeout(timer)
+    setFilter(null)
+    onReset()
+  })
+
+  return { apply, scheduleApply }
+}
+
+function sameSet (a: Set<number> | null, b: Set<number> | null): boolean {
+  if (a === b) return true
+  if (!a || !b || a.size !== b.size) return false
+  for (const v of a) if (!b.has(v)) return false
+  return true
+}
+
+/**
+ * Highlight the marker of the grid tile under the pointer and centre the map
+ * on it (after a short pause, so sweeping across the grid doesn't make the
+ * map chase every tile). Tiles are virtualised, so this listens on the grid
+ * container and reads the tile's `data-index`.
+ */
+function highlightMarkerOnTileHover (markers: Map<number, any>, centreOn: (marker: any) => void): void { // eslint-disable-line @typescript-eslint/no-explicit-any
   const gallery = state.container
   if (!gallery) return
   let active: number | undefined
+  let timer: ReturnType<typeof setTimeout> | undefined
 
   const setActive = (index: number | undefined): void => {
     if (index === active) return
     markers.get(active as number)?.getElement()?.classList.remove('ipp-marker-active')
     active = index
-    markers.get(index as number)?.getElement()?.classList.add('ipp-marker-active')
+    const marker = markers.get(index as number)
+    marker?.getElement()?.classList.add('ipp-marker-active')
+    clearTimeout(timer)
+    if (marker) timer = setTimeout(() => centreOn(marker), 150)
   }
 
   gallery.addEventListener('mouseover', (e) => {

@@ -255,6 +255,32 @@
   }
 }
 
+/* Count + "Show all" while the grid is filtered to the map's visible area */
+.ipp-map-filter {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 6px 6px 12px;
+  background: #fff;
+  color: #222;
+  font-size: 13px;
+}
+
+.ipp-map-filter[hidden] {
+  display: none;
+}
+
+.ipp-map-filter button {
+  border: 0;
+  border-radius: 4px;
+  padding: 4px 10px;
+  background: var(--color-primary);
+  color: #fff;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
 /* Marker of the photo under the pointer in the grid */
 .leaflet-marker-icon.ipp-marker-active {
   filter: hue-rotate(150deg) saturate(1.6) drop-shadow(0 0 4px rgba(0, 0, 0, 0.5));

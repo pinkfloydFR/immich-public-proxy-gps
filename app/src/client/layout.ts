@@ -37,9 +37,9 @@ export interface LayoutResult {
 export function computeLayout (containerW: number): LayoutResult {
   const tileLayout: LayoutEntry[] = new Array(state.items.length)
   const newHeaders: HeaderEntry[] = []
-  const groups: GroupSpec[] = state.groupByDate
+  const groups: GroupSpec[] = applyMapFilter(state.groupByDate
     ? groupItemsByDate(state.groupByDate)
-    : [{ label: null, indices: itemIndices() }]
+    : [{ label: null, indices: itemIndices() }])
   const isMobile = containerW < MOBILE_BREAKPOINT
   let y = 0
   for (let g = 0; g < groups.length; g++) {
@@ -58,6 +58,19 @@ export function computeLayout (containerW: number): LayoutResult {
     headers: newHeaders,
     totalHeight: Math.max(0, y)
   }
+}
+
+/**
+ * Fork: keep only the items inside the map's visible area (see
+ * `state.mapFilter`), dropping groups left empty. Filtered-out items get no
+ * layout entry, which virtualisation already skips.
+ */
+function applyMapFilter (groups: GroupSpec[]): GroupSpec[] {
+  const filter = state.mapFilter
+  if (!filter) return groups
+  return groups
+    .map(g => ({ label: g.label, indices: g.indices.filter(i => filter.has(i)) }))
+    .filter(g => g.indices.length > 0)
 }
 
 function itemIndices (): number[] {

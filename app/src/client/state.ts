@@ -83,6 +83,9 @@ export const state = {
     most-recently-visible last and trimmed to STICKY_TILE_LIMIT from the head.
   */
   stickyTiles: new Set<number>(),
+  // Fork: indices of the items whose GPS point is inside the map's visible
+  // area, once the visitor has moved or zoomed the map. null = no filter.
+  mapFilter: null as Set<number> | null,
   // Selection mode (mode-toggle UX: hidden checkmarks until activated)
   selectMode: false,
   selected: new Set<string>(),
