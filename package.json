@@ -1,0 +1,16 @@
+{
+  "name": "immich-public-proxy-workspace",
+  "private": true,
+  "workspaces": [
+    "shared",
+    "app"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces",
+    "test": "npm test --workspaces",
+    "lint": "eslint shared app --ext .ts,.tsx",
+    "predev": "tsc -b shared",
+    "dev": "concurrently -n core,ipp -c magenta,blue \"tsc -b -w --preserveWatchOutput shared\" \"npm run dev:app --workspace=app\"",
+    "bump": "npm version --no-git-tag-version --workspaces"
+  }
+}

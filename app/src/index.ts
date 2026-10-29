@@ -2,100 +2,98 @@
 
 import 'dotenv/config'
 import express from 'express'
-import cookieSession from 'cookie-session'
+import { resolve } from 'path'
 import {
-  accessible,
+  addNoStoreHeaders,
+  addResponseHeaders,
+  Asset,
+  AssetType,
+  asyncHandler,
+  CORE_PUBLIC_DIR,
+  decodeCookie,
   enforceMinimumImmichVersion,
-  fetchAssetDetail,
+  errorHandler,
+  getConfigOption,
   getKeyTypeFromShare,
-  getShareByKey,
-  handleShareRequest,
+  healthcheck,
   isId,
-  isKey
-} from './immich'
+  isKey,
+  KeyType,
+  loadConfig,
+  renderPage,
+  respondToInvalidRequest,
+  sessionMiddleware,
+  setInvalidRequestHandler,
+  SharedLink,
+  slugLinksDisabled,
+  unlockHandler
+} from '@ipp/core'
+import { fetchAssetDetail, getShareByKey, handleShareRequest } from './immich'
 import { buildAssetMetadata } from './gallery/metadata'
-import crypto from 'crypto'
+import { removedMetadataSwitches } from './gallery/exif'
 import { assetBuffer } from './stream/asset'
 import { downloadAssets } from './stream/download'
 import dayjs from 'dayjs'
-import { NextFunction, Request, Response } from 'express-serve-static-core'
-import { Asset, AssetType, ImageSize, KeyType, SharedLink } from './types'
-import { getConfigOption } from './config/access'
-import { loadConfig } from './config/loader'
-import { addResponseHeaders, asyncHandler, errorHandler } from './http'
-import { canDownload } from './share'
-import { toString } from './utils/text'
-import { decrypt, encrypt } from './encrypt'
-import { respondToInvalidRequest } from './invalidRequestHandler'
+import { Request } from 'express-serve-static-core'
+import { ImageSize } from './types'
+import { canDownload, findMotionPhotoStill, uploadHealthcheck } from './share'
+import { respondToInvalidRequest as ippInvalidRequestHandler } from './invalidRequestHandler'
 import { ASSET_VERSION } from './version'
 import { h } from 'preact'
-import { renderPage } from './view/render'
 import { Home } from './view/home'
 
-// Extend the Request type with a `password` property
-declare module 'express-serve-static-core' {
-  interface Request {
-    password?: string;
-  }
+/*
+  Must run before any code that calls getConfigOption. The bundled
+  config.json sits one level above this file (src/ in dev, dist/ in the
+  image), which is /app/config.json in the image.
+*/
+loadConfig({ defaultPath: resolve(__dirname, '../config.json') })
+
+const removedSwitches = removedMetadataSwitches()
+if (removedSwitches.length) {
+  console.error(dayjs().format() + ' FATAL: The config has ' + removedSwitches.join(' and ') +
+    ', which IPP no longer reads. Every per-field flag set to true in that group would now be shown to visitors. ' +
+    'Remove the key, and set to true only the fields you want visitors to see. ' +
+    'See https://docs.ipp.nz/config/upgrading')
+  process.exit(1)
 }
 
-// Read config.json (or the inline CONFIG env var) and apply backward-compat
-// migrations. Must run before any code that calls getConfigOption.
-loadConfig()
+/*
+  Route every invalid response, including core's, through IPP's handler file,
+  so an operator's mounted replacement applies everywhere.
+*/
+setInvalidRequestHandler(ippInvalidRequestHandler)
 
 const app = express()
-app.use(cookieSession({
-  name: 'session',
-  httpOnly: true,
-  sameSite: 'lax',
-  secret: crypto.randomBytes(32).toString('base64url')
-}))
+app.use(sessionMiddleware({ name: 'session' }))
 // For parsing the password unlock form and POSTed JSON payloads
 app.use(express.json())
 // For parsing the selective-download form POST (form-encoded body)
 app.use(express.urlencoded({ extended: false, limit: '1mb' }))
-// Cache-busted, immutable static assets under a per-release version segment.
-const inProduction = process.env.NODE_ENV === 'production'
-app.use('/share/static/' + ASSET_VERSION, express.static('public', {
-  immutable: inProduction,
-  maxAge: inProduction ? '365d' : 0,
-  setHeaders: addResponseHeaders
-}))
-// Serve static assets from the 'public' folder as /share/static
-app.use('/share/static', express.static('public', { setHeaders: addResponseHeaders }))
-// Serve the same assets on /, to allow for /robots.txt and /favicon.ico
-app.use(express.static('public', { setHeaders: addResponseHeaders }))
-// Remove the X-Powered-By ExpressJS header
-app.disable('x-powered-by')
 
-/**
- * Middleware to decode the encrypted data stored in the session cookie
- */
-const decodeCookie = (req: Request, _res: Response, next: NextFunction) => {
-  const shareKey = req.params.key
-  const session = req.session?.[shareKey]
-  if (shareKey && session?.iv && session?.cr) {
-    try {
-      const payload = JSON.parse(decrypt({
-        iv: toString(session.iv),
-        cr: toString(session.cr)
-      }))
-      if (payload?.expires && dayjs(payload.expires) > dayjs()) {
-        req.password = payload.password
-      }
-    } catch (e) { }
+/** Serve IPP's own `public` folder, then core's, at `path`. */
+function serveStatic (path: string, options: Parameters<typeof express.static>[1] = {}) {
+  for (const dir of ['public', CORE_PUBLIC_DIR]) {
+    app.use(path, express.static(dir, { ...options, setHeaders: addResponseHeaders }))
   }
-  next()
 }
 
+// Cache-busted, immutable static assets under a per-release version segment.
+const inProduction = process.env.NODE_ENV === 'production'
+serveStatic('/share/static/' + ASSET_VERSION, { immutable: inProduction, maxAge: inProduction ? '365d' : 0 })
+serveStatic('/share/static')
+// The same assets on /, to allow for /robots.txt and /favicon.ico
+serveStatic('/')
+app.disable('x-powered-by')
+
 /*
- * Shared route guards. Several routes need the same "resolve a share, reject
- * invalid / password-protected ones, optionally find the requested asset"
- * preamble. These return a discriminated result so each route keeps control of
- * its own response (e.g. the photo route redirects on password where the meta
- * and download routes return 401), while the validation order and the
- * `valid`/`link`/`passwordRequired` checks live in one place.
- */
+  Shared route guards. Several routes need the same "resolve a share, reject
+  invalid / password-protected ones, optionally find the requested asset"
+  preamble. These return a discriminated result so each route keeps control of
+  its own response (e.g. the photo route redirects on password where the meta
+  and download routes return 401), while the validation order and the
+  `valid`/`link`/`passwordRequired` checks live in one place.
+*/
 type ShareResolution =
   | { ok: true, link: SharedLink }
   | { ok: false, status: number, reason: string, passwordRequired?: boolean }
@@ -105,6 +103,9 @@ type SharedAssetResolution =
   | { ok: false, status: number, reason: string, passwordRequired?: boolean }
 
 async function resolveShare (req: Request, keyType: KeyType): Promise<ShareResolution> {
+  if (slugLinksDisabled(keyType)) {
+    return { ok: false, status: 404, reason: 'Slug links are disabled in config.json' }
+  }
   if (!isKey(req.params.key)) {
     return { ok: false, status: 404, reason: 'Invalid key for ' + req.path }
   }
@@ -121,7 +122,7 @@ async function resolveShare (req: Request, keyType: KeyType): Promise<ShareResol
   return { ok: true, link: share.link }
 }
 
-async function resolveSharedAsset (req: Request, keyType: KeyType): Promise<SharedAssetResolution> {
+async function resolveSharedAsset (req: Request, keyType: KeyType, allowMotion = false): Promise<SharedAssetResolution> {
   if (!isId(req.params.id)) {
     return { ok: false, status: 404, reason: 'Invalid ID for ' + req.path }
   }
@@ -130,32 +131,51 @@ async function resolveSharedAsset (req: Request, keyType: KeyType): Promise<Shar
   // Confirm the asset belongs to this share (defence in depth - Immich also
   // enforces this via the share key).
   const asset = resolved.link.assets.find(a => a.id === req.params.id)
-  if (!asset) {
-    return { ok: false, status: 404, reason: 'Asset not found in share' }
+  if (asset) return { ok: true, link: resolved.link, asset }
+  // A motion photo's clip is a hidden asset outside the share's asset list.
+  // Serve it on the video route only, and only if a shared still points at it.
+  if (allowMotion) {
+    const parent = findMotionPhotoStill(resolved.link, req.params.id)
+    if (parent) {
+      return {
+        ok: true,
+        link: resolved.link,
+        // Streams inline, so the still's filename / mime must not carry over.
+        asset: { ...parent, id: req.params.id, type: AssetType.video, originalFileName: undefined, originalMimeType: undefined }
+      }
+    }
   }
-  return { ok: true, link: resolved.link, asset }
+  return { ok: false, status: 404, reason: 'Asset not found in share' }
 }
 
 /*
- * [ROUTE] Healthcheck
- * The path matches for /share/healthcheck, and also the legacy /healthcheck
- */
-app.get(/^(|\/share)\/healthcheck$/, asyncHandler(async (_req, res) => {
-  if (await accessible()) {
-    res.send('ok')
-  } else {
-    res.status(503).send()
-  }
-}))
+  [ROUTE] Healthcheck, on /share/healthcheck and the legacy /healthcheck
+*/
+app.get(/^(|\/share)\/healthcheck$/, asyncHandler(healthcheck))
 
 /*
- * [ROUTE] This is the main URL that someone would visit if they are opening a shared link
- */
+  [ROUTE] The upload service's healthcheck path, when the service is assumed
+  to be at a path on this hostname. The gallery page probes it before showing
+  the "Add photos" button. With the upload service routed in front of IPP the
+  probe never gets here; without it, this answers "nothing here" as a 204
+  rather than a 404, so the probe is neither a console error in the browser
+  nor a hit on the 404 policy.
+*/
+const uploadProbe = uploadHealthcheck()
+if (uploadProbe) {
+  app.get(uploadProbe, (_req, res) => {
+    addNoStoreHeaders(res)
+    res.status(204).end()
+  })
+}
+
+/*
+  [ROUTE] The main URL a visitor opens from a shared link
+*/
 app.get('/:shareType(share|s)/:key/:mode(download)?', decodeCookie, asyncHandler(async (req, res) => {
   const keyType = getKeyTypeFromShare(req.params.shareType)
 
-  if (keyType === KeyType.slug && !getConfigOption('ipp.allowSlugLinks', true)) {
-    // Slug type links are not allowed
+  if (slugLinksDisabled(keyType)) {
     respondToInvalidRequest(res, 404, 'Slug links are disabled in config.json')
   } else {
     await handleShareRequest({
@@ -169,30 +189,16 @@ app.get('/:shareType(share|s)/:key/:mode(download)?', decodeCookie, asyncHandler
 }))
 
 /*
- * [ROUTE] Receive an unlock request from the password page
- * Stores a cookie with an encrypted payload which expires in 1 hour.
- * After that time, the visitor will need to provide the password again.
- *
- * The data is encrypted/decrypted on the server as a db-less way of
- * managing user session data. The data is provided to the server by the
- * user's browser in its encrypted state.
- */
-app.post('/share/unlock', asyncHandler(async (req, res) => {
-  if (req.session && req.body.key) {
-    req.session[req.body.key] = encrypt(JSON.stringify({
-      password: req.body.password,
-      expires: dayjs().add(1, 'hour').format()
-    }))
-  }
-  res.send()
-}))
+  [ROUTE] Password unlock from the password page
+*/
+app.post('/share/unlock', unlockHandler)
 
 /*
- * [ROUTE] Selective download - POST a list of asset IDs, get a zip of just those.
- * The list arrives as a single "assets" form field containing a JSON array.
- * Validates each ID against share.assets so the request can't pull anything
- * outside the share.
- */
+  [ROUTE] Selective download - POST a list of asset IDs, get a zip of just those.
+  The list arrives as a single "assets" form field containing a JSON array.
+  Validates each ID against share.assets so the request can't pull anything
+  outside the share.
+*/
 app.post('/:shareType(share|s)/:key/download', decodeCookie, asyncHandler(async (req, res) => {
   const keyType = getKeyTypeFromShare(req.params.shareType)
   let requestedIds: unknown
@@ -228,32 +234,27 @@ app.post('/:shareType(share|s)/:key/download', decodeCookie, asyncHandler(async 
 }))
 
 /*
- * [ROUTE] Catch accidental POST requests to share URLs (e.g. from browser history
- * state issues) and force a clean GET redirect.
- * See https://github.com/alangrainger/immich-public-proxy/pull/205
- */
+  [ROUTE] Catch accidental POST requests to share URLs (e.g. from browser history
+  state issues) and force a clean GET redirect.
+  See https://github.com/alangrainger/immich-public-proxy/pull/205
+*/
 app.post('/:shareType(share|s)/:key/:mode(download)?', (req, res) => {
   res.redirect(303, req.originalUrl)
 })
 
 /*
- * [ROUTE] This is the direct link to a photo or video asset
- */
+  [ROUTE] Direct link to a photo or video asset
+*/
 app.get('/share/:type(photo|video)/:key/:id/:size?', decodeCookie, asyncHandler(async (req, res) => {
-  // Add the headers configured in config.json (most likely `cache-control`)
   addResponseHeaders(res)
 
-  // Validate the size parameter
   if (req.params.size && !Object.values(ImageSize).includes(req.params.size as ImageSize)) {
     respondToInvalidRequest(res, 404, 'Invalid size parameter ' + req.path)
     return
   }
 
-  // Resolve the share + asset (this is a `/share/...` route, always key auth).
-  // The resolved asset gives assetBuffer access to originalMimeType and
-  // originalFileName (needed for Content-Disposition and for requiresOriginal
-  // to recognise videos/animated images and bypass the preview downgrade).
-  const resolved = await resolveSharedAsset(req, KeyType.key)
+  // Always key auth: this route has no slug form
+  const resolved = await resolveSharedAsset(req, KeyType.key, req.params.type === 'video')
   if (!resolved.ok) {
     // Password-protected: redirect to the share page so the visitor gets the
     // unlock prompt, rather than returning an error.
@@ -264,6 +265,7 @@ app.get('/share/:type(photo|video)/:key/:id/:size?', decodeCookie, asyncHandler(
     respondToInvalidRequest(res, resolved.status, resolved.reason)
     return
   }
+  if (resolved.link.password) addNoStoreHeaders(res)
   const asset: Asset = {
     ...resolved.asset,
     type: req.params.type === 'video' ? AssetType.video : resolved.asset.type
@@ -278,14 +280,14 @@ app.get('/share/:type(photo|video)/:key/:id/:size?', decodeCookie, asyncHandler(
 }))
 
 /*
- * [ROUTE] On-demand per-asset metadata for lazy album items.
- *
- * Album shares enumerate their assets from the timeline API, which yields
- * grid-only data (no exif / filename / description). When such an item opens
- * in the lightbox, the client fetches its detail from here. The id is
- * validated against the share's asset set (defence in depth - Immich also
- * enforces this via the share key) before we fetch `GET /assets/:id`.
- */
+  [ROUTE] On-demand per-asset metadata for lazy album items.
+
+  Album shares enumerate their assets from the timeline API, which yields
+  grid-only data (no exif / filename / description). When such an item opens
+  in the lightbox, the client fetches its detail from here. The id is
+  validated against the share's asset set (defence in depth - Immich also
+  enforces this via the share key) before we fetch `GET /assets/:id`.
+*/
 app.get('/:shareType(share|s)/meta/:key/:id', decodeCookie, asyncHandler(async (req, res) => {
   addResponseHeaders(res)
 
@@ -294,6 +296,8 @@ app.get('/:shareType(share|s)/meta/:key/:id', decodeCookie, asyncHandler(async (
     respondToInvalidRequest(res, resolved.status, resolved.reason)
     return
   }
+
+  if (resolved.link.password) addNoStoreHeaders(res)
 
   const detail = await fetchAssetDetail(resolved.asset)
   if (!detail) {
@@ -305,14 +309,10 @@ app.get('/:shareType(share|s)/meta/:key/:id', decodeCookie, asyncHandler(async (
 }))
 
 /*
- * [ROUTE] Home page
- *
- * It was requested here to have *something* on the home page:
- * https://github.com/alangrainger/immich-public-proxy/discussions/19
- *
- * If you don't want to see this, set showHomePage as false in your config.json:
- * https://github.com/alangrainger/immich-public-proxy?tab=readme-ov-file#immich-public-proxy-options
- */
+  [ROUTE] Home page, so the root shows *something*, as requested in
+  https://github.com/alangrainger/immich-public-proxy/discussions/19.
+  Turned off by https://docs.ipp.nz/config/ipp-options#showhomepage
+*/
 if (getConfigOption('ipp.showHomePage', true)) {
   app.get(/^\/(|share)\/*$/, (_req, res) => {
     addResponseHeaders(res)
@@ -321,29 +321,26 @@ if (getConfigOption('ipp.showHomePage', true)) {
 }
 
 /*
- * Send a 404 for all other routes
- */
-app.get('*', (req, res) => {
+  [ROUTE] Send a 404 for all other routes and methods. `all`, so a POST or DELETE to an
+  unknown path gets the same policy instead of Express's own HTML error page.
+*/
+app.all('*', (req, res) => {
   respondToInvalidRequest(res, 404, 'Invalid route ' + req.path)
 })
 
-/*
- * Terminal error middleware: any throw/rejection inside a route (routed here
- * by asyncHandler) is logged and answered per the 404 privacy policy, instead
- * of escaping to process level.
- */
 app.use(errorHandler)
 
-// Send the correct process error code for any uncaught exceptions
-// so that Docker can gracefully restart the container
+// Exit non-zero on an uncaught exception, so Docker restarts the container
 process.on('uncaughtException', (err) => {
   console.error('There was an uncaught error', err)
   server.close()
   process.exit(1)
 })
-// Log-only: with asyncHandler routing request errors into errorHandler, a
-// stray rejection from a background task (the version check, etc.) is not
-// worth killing every in-flight request for.
+/*
+  Log only: with asyncHandler routing request errors into errorHandler, a
+  stray rejection from a background task (the version check, etc.) is not
+  worth killing every in-flight request for.
+*/
 process.on('unhandledRejection', (reason, promise) => {
   console.error('Unhandled Rejection at:', promise, 'reason:', reason)
 })
@@ -353,12 +350,8 @@ process.on('SIGTERM', () => {
   process.exit(0)
 })
 
-// Start the ExpressJS server
 const port = Number(process.env.IPP_PORT) || 3000
 const server = app.listen(port, () => {
   console.log(dayjs().format() + ' Server started on port ' + port)
-  // Bail out early if the Immich server is older than IPP supports, rather
-  // than silently serving broken album shares. Unknown/unreachable is
-  // tolerated (logs a warning and continues) - see enforceMinimumImmichVersion.
   enforceMinimumImmichVersion().catch(e => console.error('Immich version check failed:', e))
 })

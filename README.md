@@ -12,12 +12,11 @@
 <a href="https://demo.ipp.nz/s/demo-gallery"><img alt="Open demo gallery" src="https://badgen.net/static/↗🖼️/live%20demo/green?scale=1.1"></a>
 </p>
 
-Share your Immich photos and albums in a safe way without exposing your Immich instance to the public.
+Share your Immich photos and albums in a safe way without exposing your Immich instance to the public. 
 
-👉 See a [Live demo gallery](https://demo.ipp.nz/s/demo-gallery)
-serving straight out of my own Immich instance.
+**This does not need an API key, or any privileged access to Immich.** Setup takes less than a minute, and you never need to touch it again as all of your sharing stays managed within Immich.
 
-Setup takes less than a minute, and you never need to touch it again as all of your sharing stays managed within Immich.
+See a [Live demo gallery](https://demo.ipp.nz/s/demo-gallery) serving straight out of my own Immich instance.
 
 <p align="center" width="100%">
 <img src="docs/public/screenshot.webp" width="602" height="414" border="1px solid white">
@@ -46,7 +45,7 @@ geotagged photos below the gallery. See [GPS / Location feature](#gps--location-
 
 1. Download the [docker-compose.yml](https://github.com/alangrainger/immich-public-proxy/blob/main/docker-compose.yml) file.
 2. Set `IMMICH_URL` to the local (not public) URL of your Immich server, and `PUBLIC_BASE_URL` to the public URL of IPP.
-3. Run `docker-compose up -d` and check that `https://your-proxy-url.com/share/healthcheck` responds.
+3. Run `docker-compose up -d` and check that `https://photos.example.com/share/healthcheck` responds.
 4. In Immich's **Server Settings**, set the "External domain" to your IPP URL. Every link Immich generates from now on
    points at the proxy.
 
@@ -87,8 +86,8 @@ To enable the GPS feature in the current config format:
 }
 ```
 
-Legacy boolean configs from the older GPS fork are still accepted during startup via migration and are mapped to the
-modern shape automatically, so an old `"location": true` still works for the GPS flag.
+Since the merge of upstream v4 (which removed every config migration shim), the legacy boolean `"location": true` from
+the older GPS fork is **no longer accepted**: use the object shape above.
 
 > **Note**: Photos without GPS EXIF data are simply skipped; they do not get a location row and do not appear on the map.
 > On album shares, the map fills progressively while per-asset metadata is fetched.
@@ -111,8 +110,15 @@ directive at this directory, so `docker-compose up -d --build` picks it up direc
 
 ## Feature requests
 
-You can [add feature requests here](https://github.com/alangrainger/immich-public-proxy/discussions/categories/feature-requests?discussions_q=is%3Aopen+category%3A%22Feature+Requests%22+sort%3Atop),
-however my goal with this project is to keep it as lean as possible.
+You can [add feature requests here](https://github.com/alangrainger/immich-public-proxy/discussions/categories/feature-requests?discussions_q=is%3Aopen+category%3A%22Feature+Requests%22+sort%3Atop).
 
 IPP has **read-only** access to Immich and stores nothing: anything that needs an API key, modifies Immich, or would
-require storing a share key won't be considered. See [CONTRIBUTING.md](CONTRIBUTING.md) for the full list.
+require storing a share key won't be considered. Upstream's optional visitor-upload service (`upload-app/`) is **not
+part of this fork**: it was removed, and the gallery's "Add photos" button is hard-disabled in `app/src/share.ts`. See
+[CONTRIBUTING.md](CONTRIBUTING.md) for the full list.
+
+## Thanks
+
+The gallery lightbox, with its zoom, swipe and keyboard navigation, is **[PhotoSwipe](https://photoswipe.com/)** by
+[Dmytro Semenov](https://github.com/dimsemenov). It is a superb piece of work, MIT licensed, and IPP would be a much
+poorer viewer without it. If you find it useful, consider [sponsoring the project](https://github.com/sponsors/dimsemenov).

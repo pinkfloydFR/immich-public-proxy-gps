@@ -16,11 +16,11 @@ available in Immich.
 When the proxy receives a request, it will come as a link like this:
 
 ```
-https://your-proxy-url.com/share/ffSw63qnIYMtpmg0RNvOui0Dpio7BbxsObjvH8YZaobIjIAzl5n7zTX5d6EDHdOYEvo
+https://photos.example.com/share/ffSw63qnIYMtpmg0RNvOui0Dpio7BbxsObjvH8YZaobIjIAzl5n7zTX5d6EDHdOYEvo
 ```
 
-The part after `/share/` is Immich's shared link public ID (called the `key` [in the docs](https://api.immich.app/endpoints/shared-links/getMySharedLink)).
-For shared links given a custom URL in Immich, the link uses that slug instead, e.g. `https://your-proxy-url.com/s/my-album`.
+The part after `/share/` is the shared link's key in Immich. A shared link with a custom URL in Immich uses that
+instead, e.g. `https://photos.example.com/s/my-album`.
 
 **Immich Public Proxy** takes that key and makes an API call to your Immich instance over your local network, to ask
 what photos or videos are shared in that share URL.
@@ -28,7 +28,7 @@ what photos or videos are shared in that share URL.
 If it is a valid share URL, the proxy fetches just those assets via local API and returns them to the visitor as an
 individual image or gallery.
 
-If the shared link has expired or any of the assets have been put in the Immich trash, it will not return those.
+If the shared link has expired, or any of the assets have been put in the Immich trash or the locked folder, it will not return those.
 
 All incoming data is validated and sanitised, and anything unexpected is simply dropped with a 404.
 
@@ -47,7 +47,8 @@ with public access only to IPP. See [Securing Immich with mTLS](/securing-immich
 IPP holds to three rules, which also decide which feature requests are accepted:
 
 - **Read-only.** IPP never modifies Immich or its files, and it needs no API key or privileged access. Anything that
-  would require either will not be added.
+  would require either will not be added. The one exception, visitor uploads, is a separate container that you add
+  only if you want it (see [Visitor uploads](#visitor-uploads)).
 - **Stateless.** No database, no accounts, and no stored share keys. The key in a share URL is what grants access to
   that share, so anything that would require IPP to remember one is unlikely to be added.
 - **Small enough to audit.** Because IPP fronts a private photo library, the code stays small enough for someone
@@ -56,5 +57,18 @@ IPP holds to three rules, which also decide which feature requests are accepted:
 Feature requests are welcome in [GitHub Discussions](https://github.com/alangrainger/immich-public-proxy/discussions/categories/feature-requests),
 with the goal of keeping IPP as lean as possible. [CONTRIBUTING.md](https://github.com/alangrainger/immich-public-proxy/blob/main/CONTRIBUTING.md)
 lists what will not be accepted.
+
+## Visitor uploads
+
+Visitors to a share can send photos back to it, but only through a second container, `immich-public-proxy-upload`.
+The IPP container has no code that accepts a file or writes to Immich. If you do not run the upload service, no part
+of IPP can write to Immich.
+
+The upload service follows the same rules as IPP in every other way. It needs no API key and keeps no state. It
+uploads with the visitor's share key, so Immich itself checks the share's "Allow public user to upload" option on
+every file. It never shows anything from your library, and it streams each file to Immich without storing it.
+
+The setup is in [Let visitors send photos back](/visitor-uploads), which also explains
+[why uploading is a separate container](/visitor-uploads#why-is-uploading-a-separate-container).
 
 Ready to set it up? Head to [Installation](/installation).

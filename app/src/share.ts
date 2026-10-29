@@ -1,16 +1,6 @@
-import { DownloadAll, SharedLink } from './types'
-import { getConfigOption } from './config/access'
+import { Asset, AssetVisibility, getConfigOption, KeyType, log, SharedLink, TtlLruCache } from '@ipp/core'
+import { DownloadAll } from './types'
 import dayjs from 'dayjs'
-
-/**
- * Display title for a shared link. Prefers the user-set link description,
- * falls back to the album name (for album shares), or a generic placeholder.
- * Used by the gallery view-model and as the zip filename in the download
- * pipeline.
- */
-export function title (share: SharedLink): string {
-  return share.description || share?.album?.albumName || 'Gallery'
-}
 
 /**
  * Decide whether the given shared link's download UI is shown (the "download
@@ -20,17 +10,92 @@ export function title (share: SharedLink): string {
  * does not affect image quality (see `gallery/sizing.ts`).
  */
 export function canDownload (share: SharedLink): boolean {
-  const allowDownloadConfig = getConfigOption('ipp.allowDownload', 0) as DownloadAll
-  if (!allowDownloadConfig) {
-    // Downloading is disabled in config.json
-    return false
-  } else if (allowDownloadConfig === DownloadAll.always) {
-    // Always allowed to download in config.json
-    return true
-  } else {
-    // Return Immich's setting for this shared link
-    return !!share.allowDownload
+  const policy = getConfigOption('ipp.allowDownload', DownloadAll.disabled)
+  if (policy === DownloadAll.always) return true
+  if (policy === DownloadAll.perImmich) return !!share.allowDownload
+  if (policy !== DownloadAll.disabled && !warnedInvalidDownloadPolicy) {
+    warnedInvalidDownloadPolicy = true
+    log.warn('ipp.allowDownload is ' + JSON.stringify(policy) + ', which is not 0, 1 or 2. Downloads are off.')
   }
+  return false
+}
+
+let warnedInvalidDownloadPolicy = false
+
+/** Where the upload service lives when `ipp.uploadUrl` is not set: a path on IPP's own hostname */
+const DEFAULT_UPLOAD_URL = '/upload'
+const FORK_UPLOADS_DISABLED = true
+
+/**
+ * The upload service's public base from `ipp.uploadUrl`, without a trailing
+ * slash: an absolute http(s) URL for a hostname of its own, or a path on
+ * IPP's hostname such as the default `/upload`. Undefined when the option is
+ * empty, so the button is off, or not one of those two forms.
+ */
+export function uploadBase (): string | undefined {
+  // Fork: visitor uploads are out of scope here (no upload service is ever
+  // deployed), so the "Add photos" button and its probe route are always off
+  // whatever `ipp.uploadUrl` says.
+  if (FORK_UPLOADS_DISABLED) return undefined
+  const configured = getConfigOption('ipp.uploadUrl', DEFAULT_UPLOAD_URL)
+  if (typeof configured !== 'string') return undefined
+  const base = configured.trim().replace(/\/+$/, '')
+  if (/^https?:\/\//i.test(base)) return base
+  // A path, but not a protocol-relative `//host`
+  if (/^\/[^/\\]/.test(base)) return base
+  return undefined
+}
+
+/**
+ * The upload service's healthcheck URL when it is assumed to be at a path on
+ * IPP's hostname, or undefined when the owner gave an absolute URL. The
+ * gallery shows the "Add photos" button only once this answers, so an Immich
+ * share with uploads allowed never shows a dead button on an install that has
+ * no upload container. An absolute URL is the owner's word and is trusted; a
+ * cross-origin check would need CORS headers anyway.
+ */
+export function uploadHealthcheck (): string | undefined {
+  const base = uploadBase()
+  return base && !/^https?:/i.test(base) ? base + '/healthcheck' : undefined
+}
+
+/**
+ * The "Add photos" link to this share on the upload service, or undefined
+ * when there is no usable `ipp.uploadUrl` (see `uploadBase`) or the owner has
+ * not turned on "Allow public user to upload". A share opened by its slug
+ * links by its slug, so the upload service resolves it the same way.
+ */
+export function uploadLink (share: SharedLink): string | undefined {
+  const base = uploadBase()
+  if (!share.allowUpload || !base) return undefined
+  return share.keyType === KeyType.slug && share.slug
+    ? base + '/s/' + encodeURIComponent(share.slug)
+    : base + '/share/' + encodeURIComponent(share.key)
+}
+
+// Asset ids already warned about, so each warns at most once a day
+const warnedUnprocessed = new TtlLruCache<true>({ ttlMs: 24 * 60 * 60_000, max: 1000 })
+
+/**
+ * Narrow a share's assets to what IPP can render: not trashed, not in the
+ * owner's locked folder, and finished processing in Immich. Immich's share
+ * listing does not filter on visibility, so a locked asset has to go here.
+ * `thumbhash` is the readiness signal: Immich's thumbnail job writes the
+ * files and only then sets it, so until it appears every image URL IPP hands
+ * out would 404.
+ */
+export function servableAssets (assets: Asset[]): Asset[] {
+  return assets.filter(asset => {
+    if (asset.isTrashed) return false
+    if (asset.visibility === AssetVisibility.locked) return false
+    if (asset.thumbhash) return true
+    if (!warnedUnprocessed.get(asset.id)) {
+      warnedUnprocessed.set(asset.id, true)
+      log.warn('Asset ' + asset.id + ' is hidden because Immich has not generated its thumbnail yet. ' +
+        'If it never appears, check the thumbnail job for that asset in Immich.')
+    }
+    return false
+  })
 }
 
 const DEFAULT_EXPIRY_FORMAT = 'YYYY-MM-DD'
@@ -77,4 +142,14 @@ function expiryDateLocale (): string | undefined {
   } catch {
     return undefined
   }
+}
+
+/**
+ * Find the shared still that a motion photo (Live Photo) clip belongs to. The
+ * clip is a hidden asset that Immich authorises under the same share key;
+ * requiring a shared still to point at it keeps the ids IPP serves bounded.
+ */
+export function findMotionPhotoStill (share: SharedLink, clipId: string): Asset | undefined {
+  if (!clipId) return undefined
+  return share.assets.find(asset => asset.livePhotoVideoId === clipId)
 }

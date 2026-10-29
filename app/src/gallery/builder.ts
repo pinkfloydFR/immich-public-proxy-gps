@@ -1,18 +1,16 @@
+import { AssetType, getConfigOption, getNumericConfigOption, renderPage, SharedLink, title, toString } from '@ipp/core'
 import {
   getVideoContentType,
   photoUrl,
   videoUrl
 } from '../immich'
 import { Response } from 'express-serve-static-core'
-import { Asset, AssetType, ImageSize, SharedLink } from '../types'
-import { getConfigOption, getNumericConfigOption } from '../config/access'
-import { canDownload, expiryDate, title } from '../share'
-import { toString } from '../utils/text'
+import { ImageSize } from '../types'
+import { canDownload, expiryDate, uploadHealthcheck, uploadLink } from '../share'
 import { h } from 'preact'
-import { renderPage } from '../view/render'
 import { Gallery, GalleryItem, GalleryProps } from '../view/gallery'
-import type { GroupByDateMode } from '../shared/types'
-import { downloadFilename } from './filename'
+import { downloadFilename, positionInShare } from './filename'
+import { groupByDateMode } from './order'
 import { requiresOriginal } from './sizing'
 import { displayDimensions, metadataGroupActive, pickExif } from './exif'
 
@@ -28,14 +26,9 @@ export async function gallery (res: Response, share: SharedLink, openItem?: numb
   // You can specify this in your docker-compose file via the PUBLIC_BASE_URL env var.
   const publicBaseUrl = process.env.PUBLIC_BASE_URL || (res.req.protocol + '://' + res.req.headers.host)
 
-  // Date grouping needs chronological order; follow the album's own sort
-  // direction, defaulting to newest-first when it has none (individual shares).
-  // Sort by the same local timestamp the grouping buckets on, so buckets stay
-  // contiguous / ordered.
+  // `share.assets` is already in display order, date grouping included
+  // (see gallery/order.ts), so no sort happens here.
   const groupByDate = groupByDateMode()
-  if (groupByDate) {
-    share.assets.sort(dateSortComparator(share.album?.order))
-  }
 
   // Metadata display flags. Read once here and forwarded to the client via
   // `metadataConfig` in the init JSON.
@@ -48,11 +41,12 @@ export async function gallery (res: Response, share: SharedLink, openItem?: numb
   // share's own download toggle (`share.allowDownload`) is on. Deliberately
   // independent of IPP's `allowDownload` config.
   const zoomUpgrade = getConfigOption('ipp.maxZoomQuality', 'preview') === 'fullsize' && share.allowDownload !== false
+  const motionPhotos = !!getConfigOption('ipp.motionPhotos', true)
   const descriptionInCaption = shareMetadataAllowed && !!getConfigOption('ipp.showMetadata.description.caption', false)
   const descriptionInSidebar = shareMetadataAllowed && !!getConfigOption('ipp.showMetadata.description.sidebar', false)
   const sidebarHasContent = shareMetadataAllowed && (descriptionInSidebar || metadataGroupActive('exif') || metadataGroupActive('location'))
 
-  const items: GalleryItem[] = await Promise.all(share.assets.map(async (asset): Promise<GalleryItem> => {
+  const items: GalleryItem[] = await Promise.all(share.assets.map(async (asset, index): Promise<GalleryItem> => {
     let videoData: string | undefined
     if (asset.type === AssetType.video) {
       const source: { src: string, type?: string } = { src: videoUrl(share.key, asset.id) }
@@ -78,6 +72,10 @@ export async function gallery (res: Response, share: SharedLink, openItem?: numb
     const fullUrl = zoomUpgrade && asset.type === AssetType.image && !requiresOriginal(asset)
       ? photoUrl(share.key, asset.id, ImageSize.fullsize)
       : undefined
+    // Motion photo clip, served through the video route under the same key.
+    const motionUrl = motionPhotos && asset.type === AssetType.image && asset.livePhotoVideoId
+      ? videoUrl(share.key, asset.livePhotoVideoId)
+      : undefined
     // Plain text; the client uses textContent so no escaping needed here.
     // Description is included if EITHER surface (caption or sidebar) wants it.
     const descriptionEnabled = descriptionInCaption || descriptionInSidebar
@@ -95,8 +93,9 @@ export async function gallery (res: Response, share: SharedLink, openItem?: numb
       thumbnailUrl,
       downloadUrl,
       videoData,
+      motionUrl,
       description: itemDescription || undefined,
-      downloadFilename: downloadFilename(asset),
+      downloadFilename: downloadFilename(asset, positionInShare(share, index)),
       width,
       height,
       thumbhash: asset.thumbhash,
@@ -152,12 +151,17 @@ export async function gallery (res: Response, share: SharedLink, openItem?: numb
       showLocationMap: shareMetadataAllowed && !!getConfigOption('ipp.showMetadata.location.gps', false)
     },
     groupByDate,
-    metaBase
+    metaBase,
+    uploadLink: uploadLink(share),
+    uploadHealthcheck: uploadHealthcheck()
   }
 
-  // HTML gallery page cache time
-  const cacheTime = Math.max(0, getNumericConfigOption('ipp.gallery.cacheTime', 300))
-  res.header('Cache-Control', 'public, max-age=' + cacheTime)
+  // HTML gallery page cache time. A password-protected gallery keeps the
+  // no-store that handleShareRequest set.
+  if (!share.password) {
+    const cacheTime = Math.max(0, getNumericConfigOption('ipp.gallery.cacheTime', 300))
+    res.header('Cache-Control', 'public, max-age=' + cacheTime)
+  }
   res.send(renderPage(h(Gallery, props)))
 }
 
@@ -166,33 +170,4 @@ export async function gallery (res: Response, share: SharedLink, openItem?: numb
  */
 function description (share: SharedLink) {
   return share?.album?.description || ''
-}
-
-/**
- * Comparator for the date-grouping sort: ascending when the album's order is
- * `'asc'`, otherwise newest-first (individual shares and orderless albums).
- * Undated assets always sort last regardless of direction, so the client's
- * "Undated" group renders at the bottom.
- */
-export function dateSortComparator (order?: string): (a: Asset, b: Asset) => number {
-  const ascending = order === 'asc'
-  const sortKey = (a: Asset) => a.localDateTime || a.fileCreatedAt || ''
-  return (a, b) => {
-    const ka = sortKey(a)
-    const kb = sortKey(b)
-    if (!ka || !kb) return ka ? -1 : kb ? 1 : 0 // undated always last
-    return ascending ? ka.localeCompare(kb) : kb.localeCompare(ka)
-  }
-}
-
-/**
- * Normalise the operator's `ipp.gallery.groupByDate` config into a grouping
- * mode. Accepts `false` (off), `true` / `'month'` (legacy = month buckets) or
- * `'day'` (day buckets); anything else is treated as off.
- */
-function groupByDateMode (): GroupByDateMode | false {
-  const v = getConfigOption('ipp.gallery.groupByDate', false)
-  if (v === 'day') return 'day'
-  if (v === true || v === 'month') return 'month'
-  return false
 }

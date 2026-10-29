@@ -10,6 +10,8 @@ Immich Public Proxy (IPP) exists to share Immich photos publicly without exposin
 
 **Read-only access to Immich. This is non-negotiable.** IPP must never modify Immich, its data, or its files. It does not use an Immich API key. The only Immich endpoints it calls are the ones reachable via a public share key. This rule rules out a large class of feature requests; see "What will not be accepted" below.
 
+**The one write path lives in its own image.** Visitor uploads are the single exception, and they live in `upload-app/` (the `immich-public-proxy-upload` image), which operators add only if they want it. The upload service writes with the visitor's share key, so Immich enforces the share's "Allow public user to upload" toggle; it still has no API key and no state, and its only Immich write is `POST /assets` in `upload-app/src/forward.ts`. `app/` and `@ipp/core` stay read-only: no code that accepts a file or writes to Immich goes there.
+
 **Stateless.** No database, no user accounts, no long-lived secrets beyond an encrypted cookie session for share passwords. Avoid adding persistent state. If you think you need a cache, estimate the real cost of not having it first.
 
 **Privacy at the boundary.** Any invalid, expired, or upstream-failed request returns 404. Do not leak upstream Immich status codes, error bodies, or share existence to the client.
@@ -19,33 +21,50 @@ Immich Public Proxy (IPP) exists to share Immich photos publicly without exposin
 Request flow for a typical share URL like `https://proxy.example.com/share/<key>`:
 
 1. Express routes in `app/src/index.ts` receive the request.
-2. `app/src/immich.ts` fetches the share metadata from Immich over the local network, validates it, and returns the asset list.
+2. `app/src/immich.ts` fetches the share metadata from Immich over the local network (through `fetchSharedLink` in `@ipp/core`), validates it, and returns the asset list.
 3. For a gallery, `app/src/gallery/builder.ts` builds the view-model and `app/src/view/gallery.tsx` renders it server-side with Preact. The page embeds a JSON init block consumed by the client.
 4. The client gallery lives in `app/src/client/` (TypeScript ES modules, compiled file-for-file by `tsc` into `app/public/js/`). It wires PhotoSwipe v5 with a virtualized justified-rows layout. There is no client-side framework hydration.
 5. For individual assets (image, video, thumbnail, download, zip), Express streams bytes from Immich back to the client without touching disk via `app/src/stream/`.
 
 ### Repository layout
 
+The repo is an npm workspace with three packages: `shared/` is `@ipp/core`, the read-side code both apps share; `app/` is IPP itself; and `upload-app/` is the optional upload service, the only code that writes to Immich. Run `npm install` at the root; there is one lockfile.
+
 ```
-.github/workflows/        CI: builds and pushes Docker image on v* tags
+.github/workflows/        ci.yaml builds and pushes both Docker images on v* tags; docs.yaml deploys the docs site
+package.json              Workspace root: scripts that delegate to the workspaces; no dependencies
+package-lock.json         The one lockfile for every workspace
+.eslintrc                 Lint config for every workspace
+shared/                   @ipp/core - read-side only, knows nothing about galleries
+  src/
+    index.ts              Barrel: everything the apps import comes from '@ipp/core'
+    types.ts              Share-level types (SharedLink, Asset, KeyType, ...)
+    immich/client.ts      Immich API request helper, URL building, key/id checks, version guard
+    immich/share.ts       fetchSharedLink, password login + token cache, auth headers, title, slug-link gate
+    config/loader.ts      loadConfig() reads env / file; the app passes its default path
+    config/access.ts      getConfigOption() reads the loaded config
+    http.ts               Operator-configured and no-store response headers, abortOnClose, asyncHandler, CORE_PUBLIC_DIR
+    invalidRequest.ts     The 404 policy (never cached), errorHandler, and setInvalidRequestHandler for the app's own handler file
+    session.ts            Cookie session, decodeCookie, unlock handler, invalid-password response
+    encrypt.ts            Cookie-session encryption for password-protected shares
+    version.ts            App version from APP_VERSION or the app's package.json
+    utils/                log, sanitize (filenames), text (escaping), ttlLruCache, webStream (incl. streaming request bodies)
+    view/                 Page renderer, theme script, password page
+  public/                 Static assets both apps serve: pico, Inter font, favicon, theme.css (tokens, page base, page header)
+  tests/                  Vitest unit tests for core
 app/
   config.json             Runtime configuration, overrideable via volume or inline
-  package.json            Node project manifest
-  tsconfig.json           Server TypeScript config (compiles src/ to dist/)
+  package.json            IPP's manifest; its version is the release version
+  tsconfig.json           Server TypeScript config (compiles src/ to dist/; references shared/)
   tsconfig.client.json    Client TypeScript config (compiles src/client/ + src/shared/ to public/js/)
-  vitest.config.ts        Unit-test runner config
+  vitest.config.ts        Unit-test runner config; aliases @ipp/core to its source
   src/
     index.ts              Express setup and routes
-    immich.ts             Upstream Immich API calls, share + token caches
-    encrypt.ts            Cookie-session encryption for password-protected shares
-    invalidRequestHandler.ts  Centralised 404 / custom-response handling
-    http.ts               Operator-configured HTTP response headers
-    share.ts              Share-level info + policy (title, canDownload)
-    types.ts              Server-only TypeScript types
-    config/
-      loader.ts           loadConfig() reads env / file, applies migrations
-      migrations.ts       Backward-compat shims for legacy config-key shapes
-      access.ts           getConfigOption() reads the loaded config
+    immich.ts             Share lookup with album enumeration and cache, asset detail, IPP URLs
+    invalidRequestHandler.ts  IPP's 404 handler; operators may replace the compiled file by a mount
+    share.ts              Share-level policy (canDownload, expiry date, motion photos, upload link and probe)
+    types.ts              Gallery-only server types
+    version.ts            Release version and the static-asset cache-busting segment
     gallery/
       builder.ts          Gallery view-model construction
       exif.ts             EXIF / location whitelisting for the sidebar
@@ -53,22 +72,39 @@ app/
     stream/
       asset.ts            Single-asset stream (image / video / thumbnail)
       download.ts         Zip pipeline (concurrency-bounded, retry, abort)
-    utils/
-      log.ts              Timestamped log.info / log.warn / log.error
-      sanitize.ts         Filename-character sanitization
-      text.ts             escapeHtml + toString narrowing
-    view/                 Preact SSR templates (.tsx)
+    view/                 Gallery and home page Preact SSR templates (.tsx)
     shared/types.ts       Types shared between server SSR and client (GalleryItem, etc.)
     client/               Client gallery, virtualisation, lightbox, sidebar
   public/                 Static assets served as-is
     photoswipe/           Vendored PhotoSwipe v5
-    thumbhash/, fonts/, images/
+    thumbhash/, images/
     style.css, photoswipe-overrides.css
-  tests/                  Vitest unit tests for pure functions
+  tests/                  Vitest unit tests for IPP
+upload-app/               immich-public-proxy-upload - one page per share; streams visitor files to Immich's POST /assets
+  config.json             Default ipp.upload.* options; no responseHeaders
+  src/
+    index.ts              Express setup and routes, served both under /upload and at the root
+    config.ts             Env and ipp.upload.* readers
+    share.ts              Share lookup through core, cached 60 s
+    gate.ts               The upload permit: the share's Immich toggle and the slug-link gate
+    receive.ts            Validates one upload request: rate limit, length, filename, type, byte budget
+    forward.ts            The service's only Immich write call: multipart POST /assets under the share key
+    limits.ts             Fixed-window budgets for the rate limit and the byte budget
+    filename.ts           Stored filename: sanitised, prefixed, extension kept; and reading the visitor fields back
+    notify.ts             Optional JSON webhook per stored file
+    tag-uploads.ts        Owner-run CLI that tags uploads by visitor name with the owner's API key; the service never loads it
+    idleTimeoutStream.ts  Drops a request body that stalls
+    view/upload.tsx       The upload page, in the look of Immich's upload UI
+    client/upload.ts      The page client: queue, XHR uploads with retry, the upload panel
+    shared/               Rules, types and icons shared by the server and the page client
+  tests/                  Vitest unit tests for the upload app
 docs/                     User docs site (VitePress); docs/README.md explains its structure
-Dockerfile                Multi-stage build, runs as the non-root `node` user
+Dockerfile                Multi-stage build; IPP runs from /app as the non-root `node` user
+Dockerfile.upload         The same for the upload service; it also runs from /app
 docker-compose.yml        Reference deployment
 ```
+
+**What goes in `@ipp/core`.** A module belongs in core when it is about Immich shares, HTTP plumbing, config, sessions, utilities or page rendering, and does not know what a gallery is. Core is read-side only: its one POST to Immich is the shared-link password login. The browser client shares no code with core; `app/src/shared/` is the separate server-and-client type folder.
 
 The server tsconfig excludes `src/client/`; the client tsconfig only includes `src/client/` and `src/shared/`. Compiled client output (`app/public/js/`) is gitignored.
 
@@ -92,9 +128,8 @@ The server tsconfig excludes `src/client/`; the client tsconfig only includes `s
 ## Development setup
 
 ```bash
-cd app
-npm install
-npm run dev
+npm install             # at the repo root, for every workspace
+npm run dev             # builds @ipp/core once, then watches core, server and client
 ```
 
 Required environment variables (set in `app/.env` or your shell):
@@ -110,27 +145,35 @@ Configuration overrides go in `app/config.json` or inline via env (see `docs/con
 
 ## Build, lint, test
 
+At the repo root:
+
 ```bash
-npm run build           # both server and client tsc; output to dist/ and public/js/
-npm run build:server    # server only
-npm run build:client    # client only
-npm test                # vitest run (unit tests on pure functions)
-npm run test:watch      # vitest in watch mode
-npm run test:container  # build a podman image and run it locally
-npx eslint src/         # lint
+npm run build           # core, then IPP's server and client; output to dist/ and app/public/js/
+npm test                # vitest run in every workspace, then the docs config check
+npm run lint            # ESLint over every workspace
+npm run bump -- 4.0.1   # set the version in every workspace manifest and the lockfile
 ```
 
-`npm test` runs the pure-function unit tests in `app/tests/`. Today the suite covers `escapeHtml` only; the other shipped pure-function areas (filename derivation, layout math, EXIF whitelisting) deserve coverage too. Add tests as you touch those areas, and for any new pure logic you introduce. Skip HTTP plumbing.
+In `app/`:
+
+```bash
+npm run build:server    # core and IPP's server only
+npm run build:client    # client only
+npm run test:watch      # vitest in watch mode
+npm run test:container  # build a podman image and run it locally
+```
+
+`npm test` runs the pure-function unit tests in `shared/tests/`, `app/tests/` and `upload-app/tests/`, then `docs/tests/`, which checks the config reference pages against both `config.json` files. The apps' tests import `@ipp/core` from its source, so they need no build. Add tests as you touch a pure-function area, and for any new pure logic you introduce. Skip HTTP plumbing.
 
 Beyond unit tests, exercise the gallery end-to-end against a real Immich instance: happy path plus failure paths (expired share, trashed asset, password protection, very large albums, video range requests).
 
 ## Conventions for adding code
 
-**Configuration.** New options go in `app/config.json` under the appropriate `ipp.*` namespace, read via `getConfigOption`, and documented on the page for their group under `docs/config/` (see `docs/README.md` for the conventions). Prefer a group toggle plus per-field overrides over a single flat boolean when several related toggles cluster, following the `ipp.showMetadata` pattern. Existing keys keep working; if you rename one, add a backward-compat shim with a startup deprecation warning, as was done for the v2.0 gallery key rename.
+**Configuration.** New options go in `app/config.json` under the appropriate `ipp.*` namespace, read via `getConfigOption`, and documented on the page for their group under `docs/config/` (see `docs/README.md` for the conventions). `npm test` and the docs build fail until the page matches. Prefer a group toggle plus per-field overrides over a single flat boolean when several related toggles cluster, following the `ipp.showMetadata` pattern. Rename a key only in a major version: the old name simply stops being read (no compatibility shim), and the rename gets a row in Renamed config keys (`docs/config/upgrading.md`) plus a line in that release's upgrade notes.
 
-**Privacy of responses.** Always return 404 for invalid or upstream-failed requests. Use `invalidRequestHandler` rather than crafting ad-hoc error responses. Do not surface Immich status codes or error bodies to the client.
+**Privacy of responses.** Always return 404 for invalid or upstream-failed requests. Use `respondToInvalidRequest` from `@ipp/core` rather than crafting ad-hoc error responses; it calls IPP's `invalidRequestHandler`, which index.ts registers at startup. Do not surface Immich status codes or error bodies to the client.
 
-**Escaping.** Any string that originates from Immich and is embedded into HTML by the SSR templates must be escaped (use `escapeHtml` from `utils/text.ts`). Strings that cross to the client via the init JSON block stay as plain text and are rendered with `textContent`, not `innerHTML` - that retired the "pre-escaped HTML over the wire" contract that the early gallery shipped with.
+**Escaping.** Any string that originates from Immich and is embedded into HTML by the SSR templates must be escaped (use `escapeHtml` from `@ipp/core`). Strings that cross to the client via the init JSON block stay as plain text and are rendered with `textContent`, not `innerHTML` - that retired the "pre-escaped HTML over the wire" contract that the early gallery shipped with.
 
 **Third-party links.** Any anchor the client renders that points to a third-party origin (the "Open in OpenStreetMap" link is the current example) must set `rel="noopener noreferrer"`. The `noreferrer` part is the load-bearing one: without it, the browser sends the share URL as the `Referer` header, and the share URL *is* the capability token for the album - it ends up in the third party's webserver logs. `noopener` prevents the new tab from touching `window.opener`. Embedding a third-party widget (map tile, oEmbed, etc.) instead of a click-through link reintroduces the same leak silently on every render - that's a design decision that needs more than a code change.
 
@@ -138,9 +181,9 @@ Beyond unit tests, exercise the gallery end-to-end against a real Immich instanc
 
 **Streaming.** Assets are streamed from Immich to the client without buffering to disk. Keep it that way. The `archiver` zip flow is also fully streamed (with per-asset retry, an idle-timeout transform, and abort-on-failure semantics).
 
-**File organisation.** Group functions by cohesion, not by file count. A file deserves its own name when it carries a coherent concept worth a separate filename - "filename sanitization" or "config loader" pass; "narrow unknown to string" does not. When several small helpers share a theme, group them in one file (`utils/text.ts` for escaping + narrowing; `share.ts` for share-level info + policy). When a single concern is substantial enough to dominate a file on its own, give it its own name (`config/migrations.ts`, `stream/download.ts`). IPP optimises for audit reading rather than tree-shakeable reuse, so fewer cohesive files beat many one-export micro-modules. Same lens applies on the client (`app/src/client/`): each module is a viewport-of-code that earns its name.
+**File organisation.** Group functions by cohesion, not by file count. A file deserves its own name when it carries a coherent concept worth a separate filename - "filename sanitization" or "config loader" pass; "narrow unknown to string" does not. When several small helpers share a theme, group them in one file (`utils/text.ts` for escaping + narrowing; `share.ts` for share-level info + policy). When a single concern is substantial enough to dominate a file on its own, give it its own name (`stream/download.ts`). IPP optimises for audit reading rather than tree-shakeable reuse, so fewer cohesive files beat many one-export micro-modules. Same lens applies on the client (`app/src/client/`): each module is a viewport-of-code that earns its name.
 
-Where to put a new function: ask what category of thing it is, not where it gets called from. Share-level policy decisions and share-derived info go in `share.ts`. Per-asset view-model transforms (filename derivation, EXIF whitelisting) go alongside `gallery/builder.ts`. HTTP response setup driven by operator config goes in `http.ts`. Streaming pipelines go in `stream/`. If a new function doesn't fit any existing category, prefer adding to the closest existing file over creating a new single-function module - revisit when a real second member of the category appears.
+Where to put a new function: ask what category of thing it is, not where it gets called from. Share-level policy decisions and share-derived info go in `share.ts`. Per-asset view-model transforms (filename derivation, EXIF whitelisting) go alongside `gallery/builder.ts`. HTTP response setup driven by operator config goes in core's `http.ts`. Streaming pipelines go in `stream/`. If a new function doesn't fit any existing category, prefer adding to the closest existing file over creating a new single-function module - revisit when a real second member of the category appears.
 
 **No client framework, no bundler.** The client is TypeScript compiled file-for-file by `tsc` into plain ES modules served by Express static. Do not introduce a frontend framework (React / Svelte / Vue / Solid) or a bundler (Webpack / Rollup / Vite / Parcel). PhotoSwipe is loaded as ESM directly. Inter-module imports inside `app/src/client/` use `.js` extensions in the source: with no bundler, the browser fetches the compiled `.js` files directly, so the extension has to be present in the import path at runtime. `moduleResolution: bundler` is permissive about extensions in TypeScript-land; the constraint comes from the browser, not the TS config.
 
@@ -148,18 +191,18 @@ Where to put a new function: ask what category of thing it is, not where it gets
 
 ## Documentation
 
-User-facing documentation is the VitePress site in `docs/`, published at https://docs.ipp.nz. Read `docs/README.md` before adding or moving a page: it sets out the four sidebar groups (Getting started, Configuration, Guides, Troubleshooting - one per kind of content in the Diátaxis sense), where each kind of new material belongs, and the page conventions. Run `npm run build` inside `docs/` before pushing; the build fails on dead internal links.
+User-facing documentation is the VitePress site in `docs/`, published at https://docs.ipp.nz. Read `docs/README.md` before adding or moving a page: it sets out the four sidebar groups (Getting started, Configuration, Guides, Troubleshooting - one per kind of content in the Diátaxis sense), where each kind of new material belongs, and the page conventions. Run `npm run build` inside `docs/` before pushing; the build fails on dead internal links and on a config reference page that disagrees with `config.json`.
 
 The root `README.md` is a front door only: pitch, demo, quick start and links. New content goes on the site.
 
 ## Release process
 
-Releases are triggered by pushing a `v*` tag. The `.github/workflows/ci.yaml` workflow builds a multi-arch (`linux/amd64`, `linux/arm64`) image, pushes to both GHCR and Docker Hub, and attaches a build-provenance attestation to each registry.
+Releases are triggered by pushing a `v*` tag. The `.github/workflows/ci.yaml` workflow builds both multi-arch (`linux/amd64`, `linux/arm64`) images, `immich-public-proxy` and `immich-public-proxy-upload`, with the same version tags, pushes them to both GHCR and Docker Hub, and attaches a build-provenance attestation to each image in each registry.
 
 Maintainer workflow for a release:
 
-1. Update `app/package.json` version with `npm version <patch|minor|major>` from inside `app/`.
-2. Push the resulting tag. CI does the rest.
+1. Run `npm run bump -- <version>` at the root. It sets the version in every workspace manifest and the lockfile.
+2. Commit, tag `v<version>` and push the tag. CI does the rest.
 
 Do not push tags as part of a PR; releases are cut by the maintainer.
 
@@ -175,9 +218,9 @@ For anything non-trivial, open a [Feature Request discussion](https://github.com
 
 Repeating the README's feature-request guidance for emphasis:
 
-- Anything that modifies Immich or its files in any way.
+- Anything that modifies Immich or its files in any way, beyond the upload service's one `POST /assets`.
 - Anything that requires an Immich API key or other privileged access.
-- Uploading photos to Immich.
+- Code in `app/` or `@ipp/core` that accepts a file or writes to Immich. That belongs in `upload-app/`, and only there.
 - Persistent state, databases, or user accounts on the IPP side.
 - Client-side bundlers (Webpack / Rollup / Vite / Parcel) or frontend frameworks (React / Svelte / Vue / Solid). Client code is TypeScript compiled file-for-file by `tsc` to plain ES modules served directly - no bundling, no framework runtime, no plugin ecosystem.
 - Features that meaningfully expand the proxy's attack surface for a niche use case.
@@ -190,7 +233,7 @@ If you are an AI coding agent working on this repo, the rules above apply to you
 
 - **Read this whole file before suggesting or making changes.** The read-only, lean, stateless constraints are project-defining and must not be relaxed for convenience.
 - **Do not suggest features from the "will not be accepted" list**, even if they are technically interesting. Push back on requests that would violate the constraints, and explain why.
-- **Do not add backwards-compatibility shims** unless a config key is being renamed or a public behavior is changing. Dead-code shims rot.
+- **Do not add backwards-compatibility shims.** Config keys are renamed only in a major version and the old name stops being read; document the rename instead. Dead-code shims rot.
 - **Do not add caches, memoization, queues, or background jobs** without first estimating the real cost of not having them. The existing share-metadata cache in `immich.ts` is for freshness coalescing, not optimisation; mirror that bar.
 - **Do not add error handling for cases that cannot happen.** Trust internal invariants. Validate only at the boundary (incoming request, Immich response).
 - **Default to writing no comments.** Add a comment only when the *why* is non-obvious: a security-relevant invariant, a workaround for a specific upstream bug, or behavior that would surprise a careful reader. Do not narrate the *what*.

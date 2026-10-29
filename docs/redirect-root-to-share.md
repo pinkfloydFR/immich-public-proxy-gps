@@ -7,9 +7,7 @@ to open a specific share, rather than showing the default IPP landing page. For 
 photos.yourdomain.net  →  your photo album
 ```
 
-IPP deliberately doesn't do this itself - storing a share path would mean storing a key,
-which goes against the design goal of being stateless and knowing nothing about your
-Immich instance. Instead, handle it at the reverse proxy level.
+IPP has no setting for this, because it would mean storing a share key. Do it in your reverse proxy instead.
 
 ## Examples
 
@@ -21,7 +19,7 @@ photos.yourdomain.net {
 	redir / /s/example-share 302
 	# Alternatively you could rewrite, so the gallery appears at the root:
 	#rewrite / /s/example-share
-	reverse_proxy immich-public-proxy:3000
+	reverse_proxy ipp-address:port
 }
 ```
 

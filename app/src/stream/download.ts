@@ -1,14 +1,9 @@
+import { Asset, log, readableFromWeb, respondToInvalidRequest, sanitize, SharedLink, title } from '@ipp/core'
 import { assetFetchUrl, authHeadersForAsset } from '../immich'
 import { Response } from 'express-serve-static-core'
-import { Asset, SharedLink } from '../types'
-import { log } from '../utils/log'
 import archiver, { Archiver } from 'archiver'
-import { sanitize } from '../utils/sanitize'
 import { resolveDownloadEndpoint, ImageEndpoint } from '../gallery/sizing'
-import { title } from '../share'
-import { getFilename } from '../gallery/filename'
-import { readableFromWeb } from '../utils/webStream'
-import { respondToInvalidRequest } from '../invalidRequestHandler'
+import { AssetPosition, attachmentDisposition, enrichFromHeaders, getFilename, servedMimeFrom, sharePositions } from '../gallery/filename'
 
 /** Attempts to get response headers from Immich for one asset before giving up. */
 const MAX_ATTEMPTS = 3
@@ -22,7 +17,7 @@ export async function downloadAll (res: Response, share: SharedLink) {
   await downloadAssets(res, share, share.assets)
 }
 
-type FetchedAsset = { response: globalThis.Response, asset: Asset, endpoint: ImageEndpoint, servedMime?: string, url: string }
+type FetchedAsset = { response: globalThis.Response, asset: Asset, endpoint: ImageEndpoint, servedMime?: string, url: string, position?: AssetPosition }
 type Failure = { asset: Asset, url: string, status?: number, error?: unknown }
 type FetchOutcome = FetchedAsset | { failure: Failure } | null
 
@@ -82,10 +77,12 @@ export async function downloadAssets (res: Response, share: SharedLink, assets: 
   // Headers and piping are deferred until the first asset has arrived, so a
   // failure before then can still be answered with a normal error response.
   let piped = false
+  // A multi-select download keeps each asset's position in the whole share
+  const positions = sharePositions(share)
 
   for (const asset of assets) {
     if (controller.signal.aborted) break
-    const fetched = await fetchOne(share, asset, controller.signal)
+    const fetched = await fetchOne(share, asset, positions.get(asset.id), controller.signal)
     if (fetched === null) break // aborted while waiting on Immich
     if ('failure' in fetched) {
       if (!piped) {
@@ -131,9 +128,7 @@ export async function downloadAssets (res: Response, share: SharedLink, assets: 
 
 function startZipResponse (res: Response, share: SharedLink, archive: Archiver) {
   res.setHeader('Content-Type', 'application/zip')
-  let filename = (sanitize(title(share)) || 'photos') + '.zip'
-  filename = encodeURI(filename)
-  res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${filename}`)
+  res.setHeader('Content-Disposition', attachmentDisposition((sanitize(title(share)) || 'photos') + '.zip'))
   // Hint to intermediate proxies (Nginx, etc.) not to buffer this response.
   res.setHeader('X-Accel-Buffering', 'no')
   res.setHeader('Cache-Control', 'no-store')
@@ -168,7 +163,7 @@ function appendEntry (archive: Archiver, fetched: FetchedAsset): Promise<'done' 
     archive.once('entry', onEntry)
     archive.once('error', onError)
     body.once('error', onError)
-    archive.append(body, { name: getFilename(fetched.asset, fetched.endpoint.servedSize, fetched.servedMime) })
+    archive.append(body, { name: getFilename(fetched.asset, fetched.endpoint.servedSize, fetched.servedMime, fetched.position) })
   })
 }
 
@@ -203,7 +198,7 @@ function teardownArchive (archive: Archiver, res: Response) {
  * Returns the fetched asset on success, a wrapped Failure on error, or null
  * if the download was aborted before we got an answer.
  */
-async function fetchOne (share: SharedLink, asset: Asset, signal: AbortSignal): Promise<FetchOutcome> {
+async function fetchOne (share: SharedLink, asset: Asset, position: AssetPosition | undefined, signal: AbortSignal): Promise<FetchOutcome> {
   if (signal.aborted) return null
 
   const endpoint = resolveDownloadEndpoint(asset, share.allowDownload !== false)
@@ -220,50 +215,7 @@ async function fetchOne (share: SharedLink, asset: Asset, signal: AbortSignal): 
   // so recover them from the headers we already fetched - no extra calls.
   const namedAsset = asset.originalFileName ? asset : enrichFromHeaders(asset, fetched.response)
 
-  // Playback-fallback downloads serve Immich's transcode; carry the response
-  // content-type so the zip entry's extension matches the actual bytes.
-  const servedMime = endpoint.subpath === '/video/playback'
-    ? (fetched.response.headers.get('content-type') || '').split(';')[0].trim() || undefined
-    : undefined
-
-  return { response: fetched.response, asset: namedAsset, endpoint, servedMime, url }
-}
-
-/**
- * Fill in originalFileName / originalMimeType from an asset response's
- * `Content-Disposition` / `Content-Type` headers, for assets that arrived
- * without them (lazy album grid assets). Returns a shallow copy so the cached
- * share asset is never mutated.
- */
-function enrichFromHeaders (asset: Asset, response: globalThis.Response): Asset {
-  const fileName = filenameFromContentDisposition(response.headers.get('content-disposition'))
-  const mime = (response.headers.get('content-type') || '').split(';')[0].trim() || undefined
-  if (!fileName && !mime) return asset
-  return {
-    ...asset,
-    originalFileName: asset.originalFileName || fileName,
-    originalMimeType: asset.originalMimeType || mime
-  }
-}
-
-/**
- * Extract a filename from a `Content-Disposition` header. Prefers the RFC 5987
- * `filename*=UTF-8''...` form (percent-decoded) over the plain `filename=`.
- * Returns undefined when neither is present.
- */
-export function filenameFromContentDisposition (header: string | null): string | undefined {
-  if (!header) return undefined
-  const extended = header.match(/filename\*=(?:UTF-8'')?([^;]+)/i)
-  if (extended) {
-    const raw = extended[1].trim().replace(/^"|"$/g, '')
-    try {
-      return decodeURIComponent(raw)
-    } catch (e) {
-      return raw
-    }
-  }
-  const plain = header.match(/filename="?([^";]+)"?/i)
-  return plain ? plain[1].trim() : undefined
+  return { response: fetched.response, asset: namedAsset, endpoint, servedMime: servedMimeFrom(endpoint.subpath, fetched.response), url, position }
 }
 
 type HeaderFetchOutcome =

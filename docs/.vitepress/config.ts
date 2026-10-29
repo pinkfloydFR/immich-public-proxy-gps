@@ -1,8 +1,39 @@
-import { defineConfig } from 'vitepress'
+import { defineConfigWithTheme, type DefaultTheme } from 'vitepress'
+import { configCheckPlugin } from './configCheck'
 
 const REPO_URL = 'https://github.com/alangrainger/immich-public-proxy'
 
-export default defineConfig({
+/** The default theme's config plus the star count the navbar pill shows. */
+export interface ThemeConfig extends DefaultTheme.Config {
+  /** GitHub stars at build time; the pill is omitted when undefined. */
+  stars?: number
+}
+
+/**
+ * The repo's star count, fetched once per build so visitors' browsers never
+ * call GitHub themselves. Undefined when the API can't be reached (a local
+ * build with no network, or the anonymous rate limit), which hides the pill.
+ * The docs workflow passes GITHUB_TOKEN for a higher limit and rebuilds
+ * weekly so the number stays current.
+ */
+async function fetchStars (): Promise<number | undefined> {
+  const headers: Record<string, string> = { Accept: 'application/vnd.github+json' }
+  if (process.env.GITHUB_TOKEN) headers.Authorization = 'Bearer ' + process.env.GITHUB_TOKEN
+  try {
+    const res = await fetch('https://api.github.com/repos/alangrainger/immich-public-proxy', {
+      headers,
+      signal: AbortSignal.timeout(5000)
+    })
+    const body = res.ok ? await res.json() : undefined
+    if (typeof body?.stargazers_count === 'number') return body.stargazers_count
+    console.warn('Star count unavailable (GitHub API status ' + res.status + '); the navbar pill is omitted.')
+  } catch (e) {
+    console.warn('Star count unavailable (' + (e instanceof Error ? e.message : String(e)) + '); the navbar pill is omitted.')
+  }
+  return undefined
+}
+
+export default async () => defineConfigWithTheme<ThemeConfig>({
   title: 'Immich Public Proxy',
   description: 'Share your Immich photos and albums publicly without exposing your Immich instance to the internet.',
   lang: 'en-NZ',
@@ -13,8 +44,13 @@ export default defineConfig({
   head: [
     ['link', { rel: 'icon', href: '/ipp.svg' }]
   ],
+  vite: {
+    // Fails the build when the config reference pages and the default config files disagree
+    plugins: [configCheckPlugin()]
+  },
   themeConfig: {
     logo: '/ipp.svg',
+    stars: await fetchStars(),
     search: {
       provider: 'local'
     },
@@ -46,18 +82,23 @@ export default defineConfig({
         text: 'Configuration',
         items: [
           { text: 'Overview', link: '/config/' },
+          { text: 'Config generator', link: '/config/generator' },
           { text: 'Environment variables', link: '/config/environment-variables' },
           { text: 'General options', link: '/config/ipp-options' },
           { text: 'Gallery', link: '/config/gallery' },
           { text: 'Lightbox', link: '/config/lightbox' },
           { text: 'Metadata', link: '/config/metadata' },
           { text: 'Error responses', link: '/config/error-responses' },
-          { text: 'Legacy config keys', link: '/config/upgrading' }
+          { text: 'Upload service', link: '/config/upload-service' },
+          { text: 'Renamed config keys', link: '/config/upgrading' }
         ]
       },
       {
         text: 'Guides',
         items: [
+          { text: 'Put IPP behind a reverse proxy', link: '/reverse-proxy' },
+          { text: 'Let visitors send photos back', link: '/visitor-uploads' },
+          { text: 'Tag and review visitor uploads', link: '/tag-and-review-uploads' },
           { text: 'Single domain with Immich', link: '/running-on-single-domain' },
           { text: 'Redirect root domain to a share', link: '/redirect-root-to-share' },
           { text: 'Securing Immich with mTLS', link: '/securing-immich-with-mtls' }

@@ -1,3 +1,7 @@
+---
+prefix: ipp.gallery
+---
+
 # Gallery
 
 Options that control how the gallery page is rendered. Configured under `ipp.gallery`.
@@ -16,24 +20,6 @@ Show the gallery title and group photos by month:
   }
 }
 ```
-
-## `singleImage`
-
-**Type:** `bool` · **Default:** `false`
-
-By default a link to a single image will directly open the image file. Set to `true` if you want to show a gallery page instead for a single item.
-
-## `singleVideo`
-
-**Type:** `bool` · **Default:** `true`
-
-When a share contains a single video, show a gallery page. Set to `false` to link directly to the video file instead.
-
-## `singleItemAutoOpen`
-
-**Type:** `bool` · **Default:** `true`
-
-When a share contains a single item and is opened on its gallery page, automatically open the lightbox on the asset.
 
 ## `showTitle`
 
@@ -63,7 +49,15 @@ Format for the [`showExpiryDate`](#showexpirydate) date, as a [dayjs format stri
 
 **Type:** `string` · **Default:** `""`
 
-Locale for [`showExpiryDate`](#showexpirydate) when the format uses name tokens (e.g. `MMMM` for month names), as a [dayjs locale code](https://github.com/iamkun/dayjs/tree/dev/src/locale) such as `"de"`, `"fr"` or `"en-gb"`. The default (`""`) is dayjs's default English. The numeric default format needs no locale. Applies only to this server-rendered date; thumbnail date-group headers ([`groupByDate`](#groupbydate)) already follow each viewer's own browser locale.
+Language for the [`showExpiryDate`](#showexpirydate) date when the format uses names (e.g. `MMMM` for month names), as a [dayjs locale code](https://github.com/iamkun/dayjs/tree/dev/src/locale) such as `"de"`, `"fr"` or `"en-gb"`. The default is English. The default numeric format needs no locale. The date-group headers from [`groupByDate`](#groupbydate) follow each visitor's own browser language instead.
+
+## `showDownloadZip`
+
+**Type:** `bool` · **Default:** `true`
+
+Show the "download all" button in the header and the multi-select download toolbar. Only takes effect when downloads are allowed by [`allowDownload`](/config/ipp-options#allowdownload).
+
+With it off, zip downloads are hidden while single downloads in the lightbox stay available ([`lightbox.showDownload`](/config/lightbox#showdownload)).
 
 ## `groupByDate`
 
@@ -71,20 +65,33 @@ Locale for [`showExpiryDate`](#showexpirydate) when the format uses name tokens 
 
 Group the gallery's thumbnails by date, with a header above each group.
 
-- `false` - no grouping (default).
-- `"month"` - month headers like "December 2024".
-- `"day"` - day headers like "Wed, 25 Dec 2024" (matching Immich's own timeline format).
+- `false` - no grouping
+- `"month"` - month headers like "December 2024"
+- `"day"` - day headers like "Wed, 25 Dec 2024"
+- `true` - the same as `"month"`
 
-Grouping uses each photo's local "taken" date (matching Immich's own timeline). Photos follow the album's own sort order from Immich - "Oldest first" puts the earliest group at the top, "Newest first" the most recent - and default to newest-first for shares with no album order. Items missing a creation date end up under an "Undated" bucket at the end (or render without any header when the whole gallery is undated).
+Grouping uses the date each photo was taken, and the headers use the same formats as Immich's own timeline. Groups follow the album's sort order in Immich, and newest first for shares without one. Photos with no date go under an "Undated" header at the end.
 
-## `showDownloadZip`
+## `singleImage`
+
+**Type:** `bool` · **Default:** `false`
+
+Show a gallery page for a share that contains a single image, instead of opening the image file directly.
+
+## `singleVideo`
 
 **Type:** `bool` · **Default:** `true`
 
-Show the bulk-zip download UI - the "download all" button in the header and the multi-select download toolbar. Only takes effect when downloads are also allowed by [`allowDownload`](/config/ipp-options#allowdownload). Set to `false` to hide the zip download while still offering per-asset downloads via the lightbox ([`lightbox.showDownload`](/config/lightbox#showdownload)).
+Show a gallery page for a share that contains a single video, instead of linking to the video file directly.
+
+## `singleItemAutoOpen`
+
+**Type:** `bool` · **Default:** `true`
+
+When a share contains a single item and is opened on its gallery page, automatically open the lightbox on the asset.
 
 ## `cacheTime`
 
 **Type:** `int` · **Default:** `300`
 
-How long (in seconds) browsers and any CDN may cache the gallery **page** before revalidating. Set this longer to reduce load on your server, but be aware that if you add new photos to a gallery they won't show up until the cache times out or you manually clear any downstream caches.
+How long, in seconds, browsers and any CDN may cache the gallery page. A longer time means less load on your server, but new photos added to a share will not show for visitors until it runs out.

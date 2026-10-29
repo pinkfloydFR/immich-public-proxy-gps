@@ -1,3 +1,7 @@
+---
+prefix: ipp
+---
+
 # General options
 
 Top-level options under `ipp.*` that don't belong to the [Gallery](/config/gallery), [Lightbox](/config/lightbox) or [Metadata](/config/metadata) groups.
@@ -15,24 +19,26 @@ Serve full-resolution images both when zooming in the lightbox and when download
 }
 ```
 
-## `responseHeaders`
+## `allowDownload`
 
-**Type:** `object`
+**Type:** `int` · **Default:** `0`
 
-Change the headers sent with your web responses. The default is a 30-day `Cache-Control` and a permissive CORS header.
-These apply to photos, videos and static files. The "download all" zip is always sent with `Cache-Control: no-store`
-to prevent CDN issues, and the gallery page uses its own [`gallery.cacheTime`](/config/gallery#cachetime).
+Show the download buttons: the "download all" zip, the multi-select download, and the download button in the lightbox. This only shows or hides the buttons; image quality is set by [`maxDownloadQuality`](#maxdownloadquality) and [`maxZoomQuality`](#maxzoomquality).
 
-```json
-{
-  "ipp": {
-    "responseHeaders": {
-      "Cache-Control": "public, max-age=2592000",
-      "Access-Control-Allow-Origin": "*"
-    }
-  }
-}
-```
+- `0` - downloads off
+- `1` - follow the Immich share's own download setting
+- `2` - always on
+
+The bulk-zip and per-asset buttons can be toggled independently once downloads are allowed - see [`gallery.showDownloadZip`](/config/gallery#showdownloadzip) and [`lightbox.showDownload`](/config/lightbox#showdownload).
+
+> [!NOTE]
+> With `2`, IPP shows the download buttons even on shares whose own download toggle in Immich is off. Immich still refuses to serve those shares' original files, so on such a share:
+>
+> - **Videos** download as the playback version, usually an `.mp4`, instead of the original.
+> - **Photos** download at [`maxDownloadQuality`](#maxdownloadquality) if it is below `original`. With `original` they fail.
+> - **Gifs** always download as the original file, so they fail.
+>
+> To be sure every download works at full quality, leave the share's download permission on in Immich.
 
 ## `maxDownloadQuality`
 
@@ -40,9 +46,41 @@ to prevent CDN issues, and the gallery page uses its own [`gallery.cacheTime`](/
 
 Highest quality served for a download (the download button and "download all" zip).
 
-- `"original"` - the full-resolution original file (default).
-- `"fullsize"` - full resolution but always browser-displayable: the original for JPEG/PNG/WebP, Immich's converted JPEG for RAW/HEIF.
-- `"preview"` - only the ~1440px preview JPEG.
+- `"original"` - the original file (could be RAW, etc)
+- `"fullsize"` - full resolution, always browser-displayable
+- `"preview"` - the ~1440px preview only
+
+`"fullsize"` serves a JPEG, PNG or WebP original as it is, and Immich's converted full-size image for RAW and HEIF.
+That converted image and the preview are JPEG or WebP, per the server's image settings.
+
+## `downloadedFilename`
+
+**Type:** `int` · **Default:** `2`
+
+How downloaded files are named, both in the zip and for a single download. The extension always matches the bytes
+served, so a preview download of a HEIC photo is `.jpg`.
+
+- `0` - the original filename, or the asset ID if there is none
+- `1` - the Immich asset ID
+- `2` - an anonymous name from the share and the item's position
+
+```
+a3f9c2e1_001.jpg
+a3f9c2e1_002.jpg
+a3f9c2e1_003.mp4
+```
+
+With `2`, the same share always gives the same names, and a few selected items keep their positions in the whole
+share. Unzipping a second download over the first replaces it. If the share's content or order changes, positions
+shift, so a re-download then replaces files with different photos.
+
+```json
+{
+  "ipp": {
+    "downloadedFilename": 0
+  }
+}
+```
 
 ## `maxZoomQuality`
 
@@ -50,55 +88,37 @@ Highest quality served for a download (the download button and "download all" zi
 
 Highest quality the lightbox loads when you zoom in past fit-to-screen.
 
-- `"preview"` - keep the preview (default; zoom is capped to the preview's real pixels).
-- `"fullsize"` - upgrade to the full-resolution browser-displayable image on zoom, à la the Immich web viewer.
+- `"preview"` - keep the preview; zoom stops at its real pixels
+- `"fullsize"` - load the full-resolution image on zoom, as Immich does
 
-`"original"` is intentionally not an option (it could be an unviewable RAW/DNG or a huge file).
+`"fullsize"` is the browser-displayable full-size image, as for [`maxDownloadQuality`](#maxdownloadquality).
+`"original"` is not an option here, because an original can be a RAW or DNG file the browser cannot display.
 
-**Independent of [`allowDownload`](#allowdownload)** - your download UI can be off while zoom is on. It only does anything where Immich can serve full resolution: the share's **own** "allow downloads" toggle in Immich must be on (the full-res image comes from the original file, which Immich gates on that toggle), and the format must be **web-displayable** (JPEG/PNG/WebP). Otherwise (RAW/HEIF, or a share with Immich downloads off) the lightbox stays on the preview. To enable zoom-up, leave the Immich share's download permission on and use [`allowDownload`](#allowdownload) to control whether the download buttons appear.
+This setting is independent of [`allowDownload`](#allowdownload): the download buttons can be off while zoom is on. The full-resolution image is only available when the share's own "Allow downloads" toggle in Immich is on; with it off, the lightbox stays on the preview. For a JPEG, PNG or WebP the zoom loads the original file. For other formats (RAW, HEIF, ...) it loads Immich's converted full-size image, which exists only if full-size previews are enabled in Immich's image settings; otherwise Immich serves the preview. To get full-resolution zoom without showing download buttons, leave downloads on in Immich and set [`allowDownload`](#allowdownload) to `0`.
 
-## `downloadedFilename`
-
-**Type:** `int` · **Default:** `0`
-
-The filename of the downloaded image.
-
-- `0` - the original filename if available, falling back to the Immich asset ID.
-- `1` - the Immich asset ID number.
-- `2` - a shortened version of the asset ID: `img_` plus the first 8 characters of the asset ID.
-
-## `allowDownload`
-
-**Type:** `int` · **Default:** `0`
-
-Show the download UI - the "download all" zip, the multi-select download, and the per-asset download button in the lightbox. Purely a UI switch; it has no effect on image quality (see [`maxZoomQuality`](#maxzoomquality) / [`maxDownloadQuality`](#maxdownloadquality)).
-
-- `0` - downloads off.
-- `1` - follow the Immich share's own download setting ([example](https://github.com/user-attachments/assets/79ea8c08-71ce-42ab-b025-10aec384938a)).
-- `2` - always on.
-
-The bulk-zip and per-asset buttons can be toggled independently once downloads are allowed - see [`gallery.showDownloadZip`](/config/gallery#showdownloadzip) and [`lightbox.showDownload`](/config/lightbox#showdownload).
-
-> [!NOTE]
-> With `2`, IPP shows the download UI even on shares whose **own** download toggle in Immich is off - but Immich still refuses to serve those shares' original files, so IPP works around it where it can:
->
-> - **Videos** are downloaded as the transcoded playback file instead of the original (the same stream the visitor can already watch). The filename extension follows the transcoded format, typically `.mp4`.
-> - **Photos** download normally as long as [`maxDownloadQuality`](#maxdownloadquality) is below `original`; with `maxDownloadQuality: original` they fail, because the original file is exactly what Immich is refusing to serve.
-> - **Gifs** always download as the original file (their preview is a static frame), so they fail on these shares.
->
-> To guarantee full-quality downloads of everything, leave the share's download permission on in Immich.
-
-## `allowSlugLinks`
+## `motionPhotos`
 
 **Type:** `bool` · **Default:** `true`
 
-Serve shared links that have a custom URL in Immich at `/s/<slug>` as well as `/share/<key>`. Set to `false` to return a 404 for slug links, so that only the key form works.
+Show motion photos (Live Photos) - an indicator on the gallery thumbnail, and a toggle in the lightbox that plays the photo's short clip and returns to the still when it ends. The toggle stays on: each motion photo the visitor moves to plays its clip automatically until they switch it off.
+
+Clips are only fetched while the toggle is on, so leaving this on costs no extra bandwidth for visitors who never use it. Set to `false` to serve motion photos as plain stills:
+
+```json
+{
+  "ipp": {
+    "motionPhotos": false
+  }
+}
+```
 
 ## `showHomePage`
 
 **Type:** `bool` · **Default:** `true`
 
-Set to `false` to remove the IPP shield page at `/` and at `/share`.
+Show the IPP shield page at `/` and at `/share`.
+
+With it off, those paths get the same [error response](/config/error-responses) as any other invalid request.
 
 ```json
 {
@@ -107,6 +127,34 @@ Set to `false` to remove the IPP shield page at `/` and at `/share`.
   }
 }
 ```
+
+## `allowSlugLinks`
+
+**Type:** `bool` · **Default:** `true`
+
+Serve shared links that have a custom URL in Immich at `/s/<slug>` as well as `/share/<key>`.
+
+With it off, a slug link gets a 404 and only the key form works.
+
+## `uploadUrl`
+
+**Type:** `string` · **Default:** `"/upload"`
+
+Where the optional upload service (the `immich-public-proxy-upload` container) is served. A share whose "Allow public user to upload" option is on in Immich then shows an "Add photos" button in the gallery header, which opens that share's page on the upload service. To set up the service, see [Let visitors send photos back](/visitor-uploads).
+
+- **A path**, such as the default `/upload`, means the service is on IPP's own hostname under that path. Before showing the button, the gallery page checks that the upload service answers `upload-ok` at `<path>/healthcheck`, so an install without the upload container never shows a dead button. When nothing is routed there, IPP answers that path itself with an empty 204.
+- **An absolute URL**, such as `https://upload.example.com`, means the service has a hostname of its own. It is trusted without a check. The URL may include a path, such as `https://photos.example.com/upload`, which points at the same place as the default but without the check.
+- **An empty string** never shows the button.
+
+## `shareCacheTime`
+
+**Type:** `int` · **Default:** `120`
+
+How long, in seconds, IPP keeps a share's list of photos in memory before it asks Immich again. Photos added to a share, including [visitor uploads](/visitor-uploads#when-do-uploads-appear), don't show in the gallery until this runs out. The minimum is `1`.
+
+A shorter time costs more calls to Immich. Each refresh of an album takes one call, plus one for each month that has photos in it, so an album that spans two years takes about 25 calls. While someone is viewing that album, IPP refreshes it once per `shareCacheTime`: about 12 calls a minute at the default, and about 100 a minute at `15`. A share that nobody is viewing costs nothing.
+
+Other visitors also wait for [`gallery.cacheTime`](/config/gallery#cachetime), a separate cache in their browser. The visitor who sent the photo skips that one: the upload page's "Back to gallery" link fetches a fresh copy of the gallery page.
 
 ## `gallery`
 
@@ -128,6 +176,25 @@ Description / EXIF / location reveal controls. See [Metadata](/config/metadata).
 
 ## `customInvalidResponse`
 
-**Type:** various
+**Type:** `various` · **Default:** `false`
 
 Send a custom response instead of the default 404. See [Error responses](/config/error-responses).
+
+## `responseHeaders`
+
+**Type:** `object`
+
+Change the headers sent with photos, videos and static files. The default is a 30-day `Cache-Control` and a
+permissive CORS header. The "download all" zip is always sent with `Cache-Control: no-store`, and the gallery page
+uses its own [`gallery.cacheTime`](/config/gallery#cachetime).
+
+```json
+{
+  "ipp": {
+    "responseHeaders": {
+      "Cache-Control": "public, max-age=2592000",
+      "Access-Control-Allow-Origin": "*"
+    }
+  }
+}
+```

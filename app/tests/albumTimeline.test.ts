@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { KeyType } from '@ipp/core'
 import { getShareByKey, utcBucketKey } from '../src/immich'
-import { KeyType } from '../src/types'
 
 // 3.0-shaped responses: album `/shared-links/me` returns an empty assets[],
 // and the album's assets are enumerated from the timeline API. This exercises
@@ -39,6 +39,8 @@ const sharedLinkResponse = (order?: string) => ({
   }
 })
 
+const MOTION_CLIP_ID = 'dddddddd-dddd-dddd-dddd-dddddddddddd'
+
 const bucketsResponse = [{ timeBucket: '2026-06-01', count: 3 }]
 
 // Columnar (struct-of-arrays). Index 1 is trashed and must be filtered out.
@@ -53,7 +55,9 @@ const bucketResponse = {
   thumbhash: ['hashA', null, 'hashC'],
   isTrashed: [false, true, false],
   fileCreatedAt: ['2026-06-03T00:00:00.000Z', '2026-06-02T00:00:00.000Z', '2026-06-01T00:00:00.000Z'],
-  localOffsetHours: [5.5, -8, 0]
+  localOffsetHours: [5.5, -8, 0],
+  // Index 0 is a motion photo; the others are ordinary assets.
+  livePhotoVideoId: [MOTION_CLIP_ID, null, null]
 }
 
 function routeFetch (sharedLink: unknown) {
@@ -101,6 +105,57 @@ describe('album timeline enumeration (Immich 3.0)', () => {
     expect(assets[0].width!).toBeGreaterThan(assets[0].height!)
   })
 
+  it('withholds assets Immich has not finished generating thumbnails for', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const pending = {
+      ...bucketResponse,
+      id: bucketResponse.id.map(id => id.replace(/^a/, 'e')),
+      thumbhash: [null, null, 'hashC'],
+      isTrashed: [false, true, false]
+    }
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      if (url.includes('/shared-links/me')) return jsonResponse(sharedLinkResponse())
+      if (url.includes('/timeline/buckets')) return jsonResponse(bucketsResponse)
+      if (url.includes('/timeline/bucket')) return jsonResponse(pending)
+      throw new Error('Unexpected fetch to ' + url)
+    }))
+    const first = await getShareByKey(uniqueKey(), undefined, KeyType.key)
+    // A second share key stands in for the next cache refresh.
+    await getShareByKey(uniqueKey(), undefined, KeyType.key)
+
+    expect(first.valid).toBe(true)
+    expect(first.link!.assets.map(a => a.id)).toEqual(['cccccccc-cccc-cccc-cccc-cccccccccccc'])
+    const warnings = warn.mock.calls.filter(c => String(c[0]).includes('eaaaaaaa-'))
+    expect(warnings).toHaveLength(1)
+    warn.mockRestore()
+  })
+
+  it('withholds unprocessed assets on an individual share too', async () => {
+    // Individual shares carry their assets inline on /shared-links/me rather
+    // than via the timeline, so the filter has to sit downstream of both.
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const individual = {
+      type: 'INDIVIDUAL',
+      key: 'real-key',
+      allowDownload: true,
+      expiresAt: null,
+      showMetadata: true,
+      assets: [
+        { id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', type: 'IMAGE', isTrashed: false, thumbhash: 'hashA' },
+        { id: 'ffffffff-ffff-ffff-ffff-ffffffffffff', type: 'IMAGE', isTrashed: false, thumbhash: null }
+      ]
+    }
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      if (url.includes('/shared-links/me')) return jsonResponse(individual)
+      throw new Error('Unexpected fetch to ' + url)
+    }))
+    const result = await getShareByKey(uniqueKey(), undefined, KeyType.key)
+
+    expect(result.valid).toBe(true)
+    expect(result.link!.assets.map(a => a.id)).toEqual(['aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'])
+    vi.mocked(console.warn).mockRestore()
+  })
+
   it('requests each bucket with an explicit UTC key so non-UTC databases match (#260)', async () => {
     const fetchMock = routeFetch(sharedLinkResponse())
     vi.stubGlobal('fetch', fetchMock)
@@ -115,6 +170,17 @@ describe('album timeline enumeration (Immich 3.0)', () => {
     expect(utcBucketKey('2026-06-01')).toBe('2026-06-01T00:00:00.000Z')
     expect(utcBucketKey('2026-06-01T00:00:00.000Z')).toBe('2026-06-01T00:00:00.000Z')
     expect(utcBucketKey('')).toBe('')
+  })
+
+  it('carries the motion photo clip id through from the bucket', async () => {
+    // Album shares get livePhotoVideoId for free from the timeline response,
+    // so motion photos cost no extra upstream requests here.
+    vi.stubGlobal('fetch', routeFetch(sharedLinkResponse()))
+    const result = await getShareByKey(uniqueKey(), undefined, KeyType.key)
+    const assets = result.link!.assets
+    expect(assets[0].livePhotoVideoId).toBe(MOTION_CLIP_ID)
+    // null in the columnar response becomes undefined, as with thumbhash
+    expect(assets[1].livePhotoVideoId).toBeUndefined()
   })
 
   it('synthesises localDateTime from fileCreatedAt + localOffsetHours', async () => {

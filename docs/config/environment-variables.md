@@ -19,7 +19,7 @@ From inside a container, `localhost` does not reach Immich. If IPP logs "Unable 
 
 **Optional** · **Default:** derived from each request
 
-The public base URL of IPP without a trailing slash, for example `https://your-proxy-url.com`. The gallery uses
+The public base URL of IPP without a trailing slash, for example `https://photos.example.com`. The gallery uses
 relative URLs everywhere except the `og:image` tag that messaging apps read for link previews, which must be fully
 qualified. When unset, IPP builds it from the incoming request's protocol and `Host` header.
 
@@ -49,3 +49,7 @@ The JSON config as an inline string. When set, no config file is read at all. Se
 [Inline via env var](/config/#inline-via-env-var) for an example.
 
 `APP_VERSION` and `NODE_ENV` are set by the Docker image and are not meant to be changed.
+
+The optional upload service reads the same variables, with the same meanings, so the `environment` block can be
+copied across. `PUBLIC_BASE_URL` stays IPP's public URL, which gives the upload page a back button to the gallery.
+See [Add the upload service](/visitor-uploads#add-the-upload-service).

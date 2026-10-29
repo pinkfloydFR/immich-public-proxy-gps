@@ -28,9 +28,10 @@ then the active file is the `config.json` at the repository root.
     "maxZoomQuality": "fullsize",
     "downloadedFilename": 0,
     "allowDownload": 1,
-    "downloadFromImmichConcurrencyLimit": 10,
     "allowSlugLinks": true,
     "showHomePage": true,
+    "motionPhotos": true,
+    "shareCacheTime": 120,
     "showMetadata": {
       "description": {
         "caption": false,
@@ -154,15 +155,21 @@ Recommended:
 
 - `1` for best alignment with Immich permissions.
 
-### `ipp.downloadFromImmichConcurrencyLimit`
+### `ipp.motionPhotos`
 
-Maximum number of parallel fetches when building a zip download.
+Shows motion photos (Live Photos): an indicator on the thumbnail and a toggle in the lightbox that plays the short clip.
+Clips are only fetched while the toggle is on. Default: `true`. Set to `false` to serve motion photos as plain stills.
 
-Recommended:
+### `ipp.shareCacheTime`
 
-- `10` for a balanced load.
-- Lower it if your server or storage is slow.
-- Raise it only if you know your backend can absorb the extra parallelism.
+How long, in seconds, the proxy keeps a share's list of assets in memory before asking Immich again. Default: `120`,
+minimum `1`. Assets added to a share don't show up until this expires; a shorter time means more calls to Immich while
+someone is viewing the share.
+
+### `ipp.uploadUrl`
+
+Upstream option pointing to its visitor-upload service. **Ignored in this fork**: uploads are disabled and the "Add
+photos" button never appears, whatever this is set to.
 
 ### `ipp.allowSlugLinks`
 
@@ -260,7 +267,7 @@ Older versions of the GPS fork used:
 }
 ```
 
-The upgraded code still migrates that legacy boolean automatically, but the modern explicit format is preferred.
+That legacy boolean is **no longer accepted** since the merge of upstream v4 (config migrations were removed upstream): use the explicit object format above.
 
 ## Invalid responses
 

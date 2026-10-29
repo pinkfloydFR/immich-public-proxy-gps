@@ -1,3 +1,7 @@
+---
+prefix: ipp.showMetadata
+---
+
 # Metadata
 
 Configured under `ipp.showMetadata`. The lightbox includes a slide-in info sidebar (toggle with the **i** key or the info button in the toolbar) that surfaces whatever metadata you opt into here.
@@ -30,56 +34,56 @@ Show the description in the sidebar only (not as a lightbox caption), expose cam
 
 ## Overview
 
-| Group         | Type     | Description                                                                                     |
-|---------------|----------|-------------------------------------------------------------------------------------------------|
-| `description` | `object` | Where to show the description. `{ "caption": bool, "sidebar": bool }`. Both default `false`. See [Description](#description). |
-| `exif`        | `object` | Camera / file EXIF group. Per-field opt-in flags, all default `false`. See [EXIF group](#exif-group). |
-| `location`    | `object` | Location group (city / state / country / GPS). Per-field opt-in flags, all default `false`. See [Location group](#location-group). |
+| Group         | Type     | Description                                                                                                      |
+|---------------|----------|------------------------------------------------------------------------------------------------------------------|
+| `description` | `object` | Where to show the description: `{ "caption": bool, "sidebar": bool }`. See [Description](#description).          |
+| `exif`        | `object` | Camera / file EXIF group, one opt-in flag per field. See [EXIF group](#exif-group).                              |
+| `location`    | `object` | Location group (city / state / country / GPS), one opt-in flag per field. See [Location group](#location-group). |
 
-Every per-field flag defaults to `false`. A field is sent to the client only when its flag is explicitly `true`. There is no master switch - this is deliberate, so that fields IPP adds in future releases don't auto-expose without your action.
+Every field defaults to `false` and is sent to visitors only when its flag is `true`. There is no master switch, so a field IPP adds in a future release stays hidden until you turn it on.
 
-The share owner's **"Show metadata"** toggle in Immich takes precedence over everything here: when it's off, IPP suppresses all description / EXIF / location output and hides the info sidebar (and its toolbar toggle) entirely, regardless of these settings.
+The share's **"Show metadata"** toggle in Immich overrides everything here. When it is off, IPP hides the description, EXIF and location data and the info sidebar, whatever these settings say.
 
-The info sidebar (and its toolbar toggle button) only appear when there is at least one section the operator has opted into - i.e. `description.sidebar` is true, or `exif` / `location` has at least one displayable field set to `true`. Dependent flags such as `exif.timeZone` do not activate the sidebar on their own. With all three groups off, the sidebar UI is suppressed.
+The info sidebar and its toolbar button only appear when at least one field is turned on: `description.sidebar`, or any displayable `exif` or `location` field. `exif.timeZone` on its own does not count, as it only changes how the date is shown.
 
 ## Description
 
 Under `ipp.showMetadata.description`.
 
-| Option    | Type   | Description                                                 |
-|-----------|--------|-------------------------------------------------------------|
-| `caption` | `bool` | Show the description below the photo as a lightbox caption. |
-| `sidebar` | `bool` | Show the description at the top of the info sidebar.        |
+| Option    | Type   | Default | Description                                                 |
+|-----------|--------|---------|-------------------------------------------------------------|
+| `caption` | `bool` | `false` | Show the description below the photo as a lightbox caption. |
+| `sidebar` | `bool` | `false` | Show the description at the top of the info sidebar.        |
 
 Set both to show in both places; set neither and the description is not included at all.
 
 ## EXIF group
 
-Under `ipp.showMetadata.exif`. Every flag defaults to `false`.
+Under `ipp.showMetadata.exif`.
 
-| Option             | Type   | Description                                                                                                      |
-|--------------------|--------|------------------------------------------------------------------------------------------------------------------|
-| `dateTimeOriginal` | `bool` | Show the date the photo was taken (per EXIF), in the photographer's local time - matching Immich's own sidebar. |
-| `timeZone`         | `bool` | Show and use the photo's timezone when formatting the date. Only applies when `dateTimeOriginal` is also enabled. |
-| `fileName`         | `bool` | Show the original filename.                                                                                      |
-| `dimensions`       | `bool` | Show width x height and megapixel count.                                                                         |
-| `fileSize`         | `bool` | Show the file size.                                                                                              |
-| `make`             | `bool` | Camera manufacturer (e.g. "Canon").                                                                              |
-| `model`            | `bool` | Camera model (e.g. "EOS R5").                                                                                    |
-| `lensModel`        | `bool` | Lens model.                                                                                                      |
-| `exposureTime`     | `bool` | Shutter speed (e.g. "1/200").                                                                                    |
-| `iso`              | `bool` | ISO sensitivity.                                                                                                 |
-| `fNumber`          | `bool` | Aperture f-number.                                                                                               |
-| `focalLength`      | `bool` | Focal length in millimetres.                                                                                     |
+| Option             | Type   | Default | Description                                                                                                       |
+|--------------------|--------|---------|-------------------------------------------------------------------------------------------------------------------|
+| `dateTimeOriginal` | `bool` | `false` | Show the date the photo was taken (per EXIF), in the photographer's local time - matching Immich's own sidebar.   |
+| `timeZone`         | `bool` | `false` | Show and use the photo's timezone when formatting the date. Only applies when `dateTimeOriginal` is also enabled. |
+| `fileName`         | `bool` | `false` | Show the original filename.                                                                                       |
+| `dimensions`       | `bool` | `false` | Show width x height and megapixel count.                                                                          |
+| `fileSize`         | `bool` | `false` | Show the file size.                                                                                               |
+| `make`             | `bool` | `false` | Camera manufacturer (e.g. "Canon").                                                                               |
+| `model`            | `bool` | `false` | Camera model (e.g. "EOS R5").                                                                                     |
+| `lensModel`        | `bool` | `false` | Lens model.                                                                                                       |
+| `exposureTime`     | `bool` | `false` | Shutter speed (e.g. "1/200").                                                                                     |
+| `iso`              | `bool` | `false` | ISO sensitivity.                                                                                                  |
+| `fNumber`          | `bool` | `false` | Aperture f-number.                                                                                                |
+| `focalLength`      | `bool` | `false` | Focal length in millimetres.                                                                                      |
 
 ## Location group
 
-Under `ipp.showMetadata.location`. Every flag defaults to `false`, except `webLink` which defaults to `true`.
+Under `ipp.showMetadata.location`.
 
-| Option    | Type   | Description                                                                                                                                                                                                                          |
-|-----------|--------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `city`    | `bool` | Show city.                                                                                                                                                                                                                          |
-| `state`   | `bool` | Show state / region.                                                                                                                                                                                                                |
-| `country` | `bool` | Show country.                                                                                                                                                                                                                        |
-| `gps`     | `bool` | Show GPS coordinates.                                                                                                                                                                                                                |
-| `webLink` | `bool` | Show an "Open in OpenStreetMap" link below the coordinates. The link is rendered with `rel="noreferrer"` so the share URL is not leaked to the map provider when a viewer clicks it. Has no effect unless `gps` is also true. Default `true`. |
+| Option    | Type   | Default | Description                                                                                                                                                         |
+|-----------|--------|---------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `city`    | `bool` | `false` | Show city.                                                                                                                                                          |
+| `state`   | `bool` | `false` | Show state / region.                                                                                                                                                |
+| `country` | `bool` | `false` | Show country.                                                                                                                                                       |
+| `gps`     | `bool` | `false` | Show GPS coordinates.                                                                                                                                               |
+| `webLink` | `bool` | `true`  | Show an "Open in OpenStreetMap" link below the coordinates. The link does not pass the share URL on to the map provider. Has no effect unless `gps` is also `true`. |

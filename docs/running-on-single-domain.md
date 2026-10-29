@@ -6,10 +6,11 @@ proxy to send all `/share/*` and `/s/*` requests to IPP.
 
 ## Caddy
 
-[View Caddy docs](https://caddyserver.com/docs/caddyfile/directives/basic_auth) for more info. Here's an example of how to do this with Caddy:
+An example Caddyfile. The `basic_auth` block protects Immich itself; see the
+[Caddy docs](https://caddyserver.com/docs/caddyfile/directives/basic_auth) for how to generate the password hash.
 
 ```
-https://your-domain.com {
+https://photos.example.com {
     # Immich Public Proxy paths
     @public path /share /share/* /s/*
     handle @public {

@@ -1,0 +1,213 @@
+---
+prefix: ipp.upload
+---
+
+# Upload service
+
+Settings for the optional upload service, the `immich-public-proxy-upload` container, which lets visitors send photos
+and videos back to a share. The setup is in [Let visitors send photos back](/visitor-uploads).
+
+The service reads config the same way as IPP: a `config.json` mounted at `/app/config.json`, the file named by
+`IPP_CONFIG`, or the `CONFIG` environment variable. Its own options are under `ipp.upload.*`. IPP never reads those,
+and the service reads none of IPP's options except the two under [Shared options](#shared-options), so one
+`config.json` can be mounted into both containers. The [environment variables](/config/environment-variables) mean
+the same as for IPP, and `PUBLIC_BASE_URL` is IPP's public URL, not the service's own.
+
+## Example
+
+Accept files up to 2 GB, and send a notification to a Gotify server for each stored file:
+
+```json
+{
+  "ipp": {
+    "upload": {
+      "maxFileSize": 2048,
+      "notifyUrl": "https://gotify.example.com/message?token=YOUR_APP_TOKEN"
+    }
+  }
+}
+```
+
+## `maxFileSize`
+
+**Type:** `int` · **Default:** `500`
+
+The largest single file accepted, in MB. The page refuses a larger file before sending it; the service checks the
+declared size on arrival and counts the bytes as they stream. The smallest value is `1`.
+
+A reverse proxy or CDN in front of the service can have a lower limit of its own. See
+[Request size limits](/visitor-uploads#request-size-limits).
+
+## `rateLimit`
+
+**Type:** `int` · **Default:** `60`
+
+Files accepted per minute from one visitor address to one share. Over the limit, the service answers with the time to
+wait, and the page sends the file again after it, up to three tries. A wait of more than a minute is shown as a
+failure with a retry button instead. `0` turns the limit off. A request the service refuses, for example for its
+size or type, does not count.
+
+The address is the one that connects to the service. Behind a reverse proxy every visitor has the proxy's address, so
+the limit covers each share as a whole.
+
+## `byteBudget`
+
+**Type:** `int` · **Default:** `10240`
+
+MB accepted per share per hour, from all visitors together. Each file's declared size is reserved when its upload
+starts and released if the upload fails. A file that would exceed the budget is refused until the hour ends. `0`
+turns the budget off.
+
+An upload that delivers less than 8 KB/s over a minute is dropped and its reservation released, so a stalled
+connection cannot hold the budget. The page retries a dropped upload.
+
+## `filenamePrefix`
+
+**Type:** `string` · **Default:** `"ipp_upload_"`
+
+Added to the start of every stored filename: `IMG_0042.jpg` is stored as `ipp_upload_IMG_0042.jpg`. The prefix is
+what an Immich workflow can match on; see [Tag uploaded photos](/tag-and-review-uploads#tag-uploaded-photos). Set it to `""`
+to store the visitor's filename unchanged.
+
+## `notice`
+
+**Type:** `string` · **Default:** `"Uploaded photos may not appear in the gallery immediately."`
+
+A short line of text shown below the upload area, letting visitors know their photos won't show up in the gallery
+straight away. It's visible the whole time the page is open, so visitors read it before they upload as well as after.
+Set it to `""` to hide it.
+
+The text is shown exactly as written, without HTML or links, so you can translate it into your gallery's language. The
+reason for the delay is explained in [When do uploads appear](/visitor-uploads#when-do-uploads-appear).
+
+## `askName`
+
+**Type:** `bool` · **Default:** `true`
+
+Whether the upload page has an optional "Your name" field. The name goes into each stored filename between the prefix
+and the original name, followed by the [`fieldSeparator`](#fieldseparator), so `IMG_0042.jpg` from Jane Smith is
+stored as `ipp_upload_jane-smith,IMG_0042.jpg`. A file sent without a name is stored as `ipp_upload_IMG_0042.jpg`,
+with no separator. The visitor's browser remembers the name for the next share on the same install. With `false`, the
+field is not shown and a name sent anyway is ignored.
+
+The name is stored as a slug: lower case, letters and digits in any script, and a hyphen for anything else, at most 32
+characters. A filename that already carries the prefix gets neither the prefix nor the name again. The name is the
+visitor's own claim; IPP cannot check it. For what to do with it, see
+[Find each visitor's uploads](/tag-and-review-uploads#find-each-visitor-s-uploads).
+
+## `fieldSeparator`
+
+**Type:** `string` · **Default:** `","`
+
+The single character that ends each visitor field in a stored filename, between the field and the original name, as
+in `ipp_upload_jane-smith,IMG_0042.jpg`. The visitor's name is the only field today. The separator is removed from the
+visitor's own filename, so it always marks the end of a field. A file sent with no fields has no separator at all.
+
+A comma reads naturally, but some people name their photos with one, as in `Venice, Italy.jpg`, and that comma is
+lost. If your visitors do, set `"^"`: it is never written by a camera or a phone, and almost never by a person.
+
+```json
+{
+  "ipp": {
+    "upload": {
+      "fieldSeparator": "^"
+    }
+  }
+}
+```
+
+Any one punctuation character that is legal in a filename works. More than one character, a letter, digit, hyphen,
+dot, space, a character that is illegal in a filename (`/ ? < > \ : * | "`) or a character in
+[`filenamePrefix`](#filenameprefix) is not accepted, and the default is used instead.
+Changing it later leaves the files already stored with the old one. How the filename is read back is explained in
+[The separator](/tag-and-review-uploads#the-separator).
+
+## `notifyUrl`
+
+**Type:** `string` · **Default:** `""`
+
+A URL that receives one JSON `POST` for each stored file, sent after the visitor has been answered. Empty means no
+notifications. Each notification is sent once, with no retry. A failure is logged with the URL's host only, so a
+token in the URL never reaches the log.
+
+`title` and `message` are at the top level, so Gotify shows them with no setup. Everything else is under `data`:
+
+```json
+{
+  "title": "Photo sent to Holiday 2025",
+  "message": "ipp_upload_jane-smith,IMG_0042.jpg (3.0 MB) was uploaded to Holiday 2025 by jane-smith.",
+  "data": {
+    "event": "upload",
+    "time": "2026-10-05T07:18:00.000Z",
+    "share": { "type": "album", "id": "9f1c…", "title": "Holiday 2025" },
+    "file": { "name": "ipp_upload_jane-smith,IMG_0042.jpg", "size": 3145728, "type": "image/jpeg" },
+    "asset": { "id": "4b2e…", "status": "created" },
+    "uploader": "jane-smith"
+  }
+}
+```
+
+- `share.type` is `album` for an album share and `individual` for a share of selected photos. `share.id` is the
+  album ID or the shared link ID.
+- `asset.status` is `created`, or `duplicate` when the owner already had the same file. Immich adds a duplicate to the
+  share too.
+- `uploader` is the visitor's name as it appears in the filename, or `""` when the visitor gave none or
+  [`askName`](#askname) is off.
+- The body never contains the share key, the custom URL or a password.
+
+ntfy reads the two fields through its inline templates:
+
+```
+https://ntfy.sh/your-topic?tpl=yes&t={{.title}}&m={{.message}}
+```
+
+## `notifyHeaders`
+
+**Type:** `object` · **Default:** `{}`
+
+Extra headers sent with each notification, for example an `Authorization` header. Values must be strings.
+
+```json
+{
+  "ipp": {
+    "upload": {
+      "notifyUrl": "https://hooks.example.com/ipp",
+      "notifyHeaders": { "Authorization": "Bearer YOUR_TOKEN" }
+    }
+  }
+}
+```
+
+## `notifyTimeout`
+
+**Type:** `int` · **Default:** `10000`
+
+How long to wait for the notification URL to answer, in milliseconds.
+
+## Shared options
+
+The service also reads two IPP options, with the same meaning:
+
+- [`allowSlugLinks`](/config/ipp-options#allowsluglinks). When `false`, the upload page is not served at `/s/<slug>`
+  either.
+- [`customInvalidResponse`](/config/ipp-options#custominvalidresponse). The status code, redirect, `null` and `false`
+  forms all apply. There is no `invalidRequestHandler.js` to replace in the upload image.
+
+`responseHeaders` is not read. Every response from the service other than its static assets carries
+`Cache-Control: no-store`, and none carries a CORS header.
+
+## Refused uploads
+
+A request for an unknown or expired share, or for a share whose "Allow public user to upload" option is off, gets the
+same [error response](/config/error-responses) as it would from IPP. Once a share accepts uploads, a refused file gets
+one of these codes and a short reason, which the page shows to the visitor:
+
+| Code | Reason                                                                                                           |
+|------|------------------------------------------------------------------------------------------------------------------|
+| 400  | The file is empty, the filename has no extension, or Immich refused the file, for example because the owner's storage quota is full. |
+| 403  | The share no longer accepts uploads.                                                                             |
+| 411  | The request has no `Content-Length` header.                                                                      |
+| 413  | The file is larger than `maxFileSize`, sent more bytes than its `Content-Length` declared, or the share has used its `byteBudget` for the hour. |
+| 415  | The file is not a photo or a video. SVG files are refused, by media type and by extension.                       |
+| 429  | The visitor is over `rateLimit`. `Retry-After` gives the wait in seconds.                                        |
+| 502  | Immich could not be reached, or failed.                                                                          |

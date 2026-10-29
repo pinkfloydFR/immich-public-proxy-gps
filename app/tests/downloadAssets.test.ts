@@ -1,9 +1,10 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
+import { Asset, AssetType, KeyType, loadConfig, SharedLink } from '@ipp/core'
+import { createHash } from 'crypto'
 import { Writable } from 'stream'
 import { once } from 'events'
 import type { Response } from 'express-serve-static-core'
 import { downloadAssets } from '../src/stream/download'
-import { Asset, AssetType, KeyType, SharedLink } from '../src/types'
 
 /*
 "Download all" streams each asset from Immich straight into the zip on the
@@ -16,7 +17,14 @@ dies mid-stream).
 afterEach(() => {
   vi.unstubAllGlobals()
   vi.restoreAllMocks()
+  delete process.env.CONFIG
+  loadConfig()
 })
+
+function setConfig (config: unknown) {
+  process.env.CONFIG = JSON.stringify(config)
+  loadConfig()
+}
 
 function makeAsset (id: string): Asset {
   return {
@@ -59,6 +67,7 @@ class FakeRes extends Writable {
   }
 
   setHeader (name: string, value: string) { this.headers[name] = value; return this }
+  set (name: string, value: string) { return this.setHeader(name, value) }
   status (code: number) { this.statusCode = code; return this }
   send () { this.end(); return this }
 
@@ -156,6 +165,7 @@ function countOf (zip: Buffer, signature: string): number {
 
 describe('downloadAssets', () => {
   it('streams a valid zip with one entry per asset', async () => {
+    setConfig({ ipp: { downloadedFilename: 0 } })
     vi.stubGlobal('fetch', instantFetch(2048))
     const res = new FakeRes()
     await downloadAssets(asResponse(res), share, [makeAsset('a1'), makeAsset('a2')])
@@ -238,6 +248,7 @@ describe('downloadAssets', () => {
     expect(res.writableEnded).toBe(true)
     expect(res.received).toBe(0)
     expect(res.headers['Content-Type']).toBeUndefined()
+    expect(res.headers['Cache-Control']).toContain('no-store')
   }, 10_000)
 
   it('destroys the response when a later asset keeps failing', async () => {
@@ -276,4 +287,31 @@ describe('downloadAssets', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1)
     expect(signals.every(s => s.aborted)).toBe(true)
   }, 10_000)
+
+  it('numbers multi-select entries by their position in the whole share (downloadedFilename: 2)', async () => {
+    setConfig({ ipp: { downloadedFilename: 2 } })
+    vi.stubGlobal('fetch', instantFetch(2048))
+    const album: SharedLink = { ...share, assets: ['a1', 'a2', 'a3', 'a4', 'a5'].map(makeAsset) }
+    const prefix = createHash('sha256').update(album.key).digest('hex').slice(0, 8)
+    const res = new FakeRes()
+    // Selected out of order: entries follow the request order, names the album order
+    await downloadAssets(asResponse(res), album, [album.assets[3], album.assets[1]])
+    expect(centralDirectory(res.output)).toEqual([
+      { name: `${prefix}_004.jpg`, size: 2048 },
+      { name: `${prefix}_002.jpg`, size: 2048 }
+    ])
+  })
+
+  it('names a WebP preview zip entry .webp', async () => {
+    setConfig({ ipp: { maxDownloadQuality: 'preview', downloadedFilename: 0 } })
+    const fetchMock = vi.fn(async () => new globalThis.Response(new Uint8Array(2048), {
+      status: 200,
+      headers: { 'content-type': 'image/webp' }
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+    const res = new FakeRes()
+    await downloadAssets(asResponse(res), share, [makeAsset('a1')])
+    expect(String(fetchMock.mock.calls[0][0])).toContain('size=preview')
+    expect(centralDirectory(res.output)).toEqual([{ name: 'a1.webp', size: 2048 }])
+  })
 })

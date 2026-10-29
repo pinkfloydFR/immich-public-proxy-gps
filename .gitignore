@@ -6,6 +6,7 @@ app/public/js/
 .directory
 /app/config.dev.json
 .npm-cache/
+*.tsbuildinfo
 
 # trail (outil de Claude Code) : réglages, hooks, skill et learnings (.trail/) sont
 # partagés dans le dépôt ; seuls la carte du code (graft/, régénérée par `trail build`)

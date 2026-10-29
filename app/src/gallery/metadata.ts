@@ -1,8 +1,7 @@
-import { Asset, SharedLink } from '../types'
+import { Asset, getConfigOption, SharedLink } from '@ipp/core'
 import { AssetMetadata } from '../shared/types'
-import { getConfigOption } from '../config/access'
 import { pickExif } from './exif'
-import { downloadFilename } from './filename'
+import { downloadFilename, findPositionInShare } from './filename'
 
 /**
  * Build the on-demand metadata payload for a single asset, served by the
@@ -28,6 +27,6 @@ export function buildAssetMetadata (asset: Asset, share: SharedLink): AssetMetad
   return {
     exif: shareMetadataAllowed ? pickExif(asset) : undefined,
     description,
-    downloadFilename: downloadFilename(asset)
+    downloadFilename: downloadFilename(asset, findPositionInShare(share, asset.id))
   }
 }
