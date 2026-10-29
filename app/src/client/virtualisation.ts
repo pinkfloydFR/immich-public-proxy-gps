@@ -135,10 +135,12 @@ export function computeLayoutAndRender () {
   }
   state.lastContainerW = containerW
 
+  const anchor = captureScrollAnchor()
   const result = computeLayout(containerW)
   state.layout = result.layout
   state.headers = result.headers
   state.container.style.height = result.totalHeight + 'px'
+  restoreScrollAnchor(anchor)
 
   for (const [, el] of state.renderedTiles) el.remove()
   state.renderedTiles.clear()
@@ -149,6 +151,30 @@ export function computeLayoutAndRender () {
 
   virtualize()
   loadVisibleTiles()
+}
+
+/**
+ * Fork: the tile at the top of the viewport and its offset from it, taken
+ * before a re-layout (column width change when the map appears, map filter
+ * change) so the page can be scrolled to keep that tile where it was instead
+ * of jumping. Null when the grid's top is on screen: nothing to keep.
+ */
+function captureScrollAnchor (): { index: number, offset: number } | null {
+  if (!state.container || !state.layout.length) return null
+  const viewportTop = -state.container.getBoundingClientRect().top
+  if (viewportTop <= 0) return null
+  for (const l of state.layout) {
+    if (l && l.top + l.height > viewportTop) return { index: l.index, offset: l.top - viewportTop }
+  }
+  return null
+}
+
+function restoreScrollAnchor (anchor: { index: number, offset: number } | null): void {
+  const entry = anchor && state.layout[anchor.index]
+  if (!anchor || !entry || !state.container) return
+  const viewportTop = -state.container.getBoundingClientRect().top
+  const delta = (entry.top - anchor.offset) - viewportTop
+  if (Math.abs(delta) >= 1) window.scrollBy({ top: delta, behavior: 'instant' })
 }
 
 /**

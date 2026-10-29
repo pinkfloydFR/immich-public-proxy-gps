@@ -126,7 +126,7 @@ export function initLocationMap (): void {
 function setupMapFilter (
   L: any, map: any, mapContainer: HTMLElement, markers: Map<number, any>, // eslint-disable-line @typescript-eslint/no-explicit-any
   onReset: () => void
-): { apply: () => void, scheduleApply: () => void } {
+): { apply: (fromVisitor?: boolean) => void, scheduleApply: () => void } {
   const box = document.createElement('div')
   box.className = 'ipp-map-filter leaflet-bar'
   box.hidden = true
@@ -140,7 +140,11 @@ function setupMapFilter (
   const Control = L.Control.extend({ onAdd: () => box })
   new Control({ position: 'topright' }).addTo(map)
 
-  const setFilter = (next: Set<number> | null): void => {
+  // `fromVisitor`: the visitor moved the map or pressed "Show all", so the
+  // grid's new content is shown from its start. Otherwise (a lazy album pin
+  // arriving while the visitor scrolls) the scroll position is left anchored
+  // on the photo in view, or the page would jump under the visitor.
+  const setFilter = (next: Set<number> | null, fromVisitor: boolean): void => {
     const before = state.mapFilter
     state.mapFilter = next
     box.hidden = !next
@@ -149,30 +153,30 @@ function setupMapFilter (
     relayout()
     // Side by side, the map is sticky: bring the top of the (now shorter)
     // grid into view. Stacked on a phone, the visitor is at the map; leave it.
-    if (state.container && getComputedStyle(mapContainer).position === 'sticky') {
+    if (fromVisitor && state.container && getComputedStyle(mapContainer).position === 'sticky') {
       const top = state.container.getBoundingClientRect().top
       if (top < 0) window.scrollTo({ top: window.scrollY + top - 16, behavior: 'instant' })
     }
   }
 
-  const apply = (): void => {
+  const apply = (fromVisitor = true): void => {
     const view = map.getBounds()
     const inView = new Set<number>()
     for (const [index, marker] of markers) {
       if (view.contains(marker.getLatLng())) inView.add(index)
     }
-    setFilter(inView)
+    setFilter(inView, fromVisitor)
   }
 
   let timer: ReturnType<typeof setTimeout> | undefined
   const scheduleApply = (): void => {
     clearTimeout(timer)
-    timer = setTimeout(apply, 300)
+    timer = setTimeout(() => apply(false), 300)
   }
 
   button.addEventListener('click', () => {
     clearTimeout(timer)
-    setFilter(null)
+    setFilter(null, true)
     onReset()
   })
 
