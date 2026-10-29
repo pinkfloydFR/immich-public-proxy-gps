@@ -120,13 +120,17 @@ export function Gallery (props: GalleryProps) {
         )}
 {/* Container is intentionally empty - web.js's virtualisation manager
             populates it with only the tiles within the viewport buffer. */}
-        <div id="gallery"></div>
-        {props.metadataConfig.showLocationMap && (
-          <section id="map-container" hidden>
-            <h2>Locations</h2>
-            <div id="map"></div>
-          </section>
-        )}
+        {/* Fork: on wide screens the map sits in a sticky column to the right of
+            the grid; below 900px it stacks under the grid */}
+        <div id="gallery-layout">
+          <div id="gallery"></div>
+          {props.metadataConfig.showLocationMap && (
+            <section id="map-container" hidden>
+              <h2>Locations</h2>
+              <div id="map"></div>
+            </section>
+          )}
+        </div>
         {props.showDownloadZip && (
           <div id="select-toolbar" hidden>
             <button id="select-cancel" class="toolbar-btn" type="button" aria-label="Exit selection mode">

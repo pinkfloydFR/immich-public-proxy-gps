@@ -218,6 +218,49 @@
   cursor: pointer;
 }
 
+/* Fork: grid on the left, map on the right, like a list + map screen. The page
+   still scrolls as a whole (virtualisation follows window scroll), and the map
+   column stays in view with position: sticky. While no photo has GPS data the
+   map stays hidden and the grid takes the full width. */
+@media (min-width: 900px) {
+  #gallery-layout {
+    display: flex;
+    align-items: flex-start;
+  }
+
+  #gallery-layout > #gallery {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  #map-container {
+    flex: 0 0 40%;
+    position: sticky;
+    top: 16px;
+    height: calc(100vh - 32px);
+    height: calc(100dvh - 32px);
+    display: flex;
+    flex-direction: column;
+    margin: 0 var(--gutter) var(--gutter) 0;
+  }
+
+  #map-container[hidden] {
+    display: none;
+  }
+
+  #map {
+    flex: 1 1 auto;
+    height: auto;
+    min-height: 0;
+  }
+}
+
+/* Marker of the photo under the pointer in the grid */
+.leaflet-marker-icon.ipp-marker-active {
+  filter: hue-rotate(150deg) saturate(1.6) drop-shadow(0 0 4px rgba(0, 0, 0, 0.5));
+  z-index: 10000 !important;
+}
+
 .leaflet-popup-content {
   margin: 12px;
 }

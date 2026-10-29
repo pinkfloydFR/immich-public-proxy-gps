@@ -34,8 +34,14 @@ export function initLocationMap (): void {
     }).addTo(map)
 
     const seen = new Set<string>()
+    const markers = new Map<number, any>() // eslint-disable-line @typescript-eslint/no-explicit-any
     let bounds: LeafletBounds | null = null
     let markerCount = 0
+
+    // The map column changes size when it first appears and when the window
+    // resizes; Leaflet only redraws its tiles after invalidateSize()
+    new ResizeObserver(() => map.invalidateSize()).observe(mapEl)
+    highlightMarkerOnTileHover(markers)
 
     const addMarker = (item: GalleryItem, index: number): void => {
       const lat = item.exif?.latitude
@@ -57,6 +63,7 @@ export function initLocationMap (): void {
       }
 
       seen.add(item.id)
+      markers.set(index, marker)
       markerCount += 1
       mapContainer.hidden = false
 
@@ -76,6 +83,30 @@ export function initLocationMap (): void {
     state.items.forEach((item, index) => addMarker(item, index))
     if (state.metaBase) loadLazyDetails(addMarker)
   }).catch(() => {})
+}
+
+/**
+ * Highlight the marker of the grid tile under the pointer. Tiles are
+ * virtualised, so this listens on the grid container and reads the tile's
+ * `data-index`.
+ */
+function highlightMarkerOnTileHover (markers: Map<number, any>): void { // eslint-disable-line @typescript-eslint/no-explicit-any
+  const gallery = state.container
+  if (!gallery) return
+  let active: number | undefined
+
+  const setActive = (index: number | undefined): void => {
+    if (index === active) return
+    markers.get(active as number)?.getElement()?.classList.remove('ipp-marker-active')
+    active = index
+    markers.get(index as number)?.getElement()?.classList.add('ipp-marker-active')
+  }
+
+  gallery.addEventListener('mouseover', (e) => {
+    const tile = (e.target as HTMLElement).closest<HTMLElement>('a[data-index]')
+    setActive(tile ? Number(tile.dataset.index) : undefined)
+  })
+  gallery.addEventListener('mouseleave', () => setActive(undefined))
 }
 
 async function loadLazyDetails (addMarker: (item: GalleryItem, index: number) => void): Promise<void> {
